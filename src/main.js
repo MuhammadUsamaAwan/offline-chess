@@ -425,6 +425,29 @@ $('depth').addEventListener('input', (e) => {
 });
 $('depth').addEventListener('change', () => { if (isHumanTurn()) startLiveAnalysis(); });
 
+$('hint').addEventListener('click', async () => {
+  // Only hint the live position, and only when a move is to be made.
+  if (game.isGameOver() || viewPly < history.length) return;
+  const btn = $('hint');
+  const original = btn.textContent;
+  const fen = game.fen();
+  btn.disabled = true;
+  btn.textContent = 'Thinking…';
+  try {
+    const res = await engine.analyze(fen, { depth: state.depth, multipv: 1 });
+    const u = res.bestmove || res.lines[0]?.pv?.[0];
+    if (u && game.fen() === fen) {
+      board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
+      btn.disabled = false;
+      btn.textContent = original;
+      flash(btn, `Best: ${pvToSan(fen, [u])[0] || u}`);
+      return;
+    }
+  } catch { /* ignore */ }
+  btn.disabled = false;
+  btn.textContent = original;
+});
+
 $('analysis-toggle').addEventListener('change', (e) => {
   state.analysisOn = e.target.checked;
   if (state.analysisOn) {
