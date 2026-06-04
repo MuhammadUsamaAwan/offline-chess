@@ -2,11 +2,13 @@ import { Chess } from 'chess.js';
 import { Engine } from './engine.js';
 import { Board } from './board.js';
 import openings from './openings.json';
+import { Sounds } from './sounds.js';
 import './style.css';
 
 // ---------- State ----------
 const game = new Chess();
 const engine = new Engine('./engine/stockfish.js');
+const sounds = new Sounds();
 
 const state = {
   mode: 'ai',        // 'ai' | 'human'
@@ -70,6 +72,7 @@ function recordMove(move, prevFen) {
   board.setLastMove(move);
   board.drawArrow(null);
   refreshAll();
+  playMoveSound(move);
 
   if (game.isGameOver()) {
     showResult();
@@ -179,6 +182,16 @@ function refreshAll() {
   updateTurnIndicator();
   updateEvalBarFromTurn();
   updateOpening();
+}
+
+function playMoveSound(move) {
+  if (game.isGameOver()) return sounds.gameEnd();
+  if (game.inCheck()) return sounds.check();
+  const f = move.flags || '';
+  if (f.includes('k') || f.includes('q')) return sounds.castle();
+  if (f.includes('p')) return sounds.promote();
+  if (move.captured || f.includes('c') || f.includes('e')) return sounds.capture();
+  return sounds.move();
 }
 
 function updateOpening() {
@@ -373,6 +386,7 @@ $('analysis-toggle').addEventListener('change', (e) => {
   }
 });
 $('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
+$('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
 
 $('new-game').addEventListener('click', startGame);
 $('flip').addEventListener('click', () => board.flip());
