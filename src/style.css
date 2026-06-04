@@ -170,7 +170,6 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .anno.mistake { color: #e29a4b; }
 .anno.blunder { color: #e06c75; }
 
-#review { width: 100%; margin-bottom: 10px; }
 .review-summary { margin-bottom: 10px; font-size: 13px; }
 .rev-title { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-bottom: 4px; }
 .rev-row { display: grid; grid-template-columns: 48px 56px 1fr; align-items: center; gap: 6px; padding: 3px 0; }

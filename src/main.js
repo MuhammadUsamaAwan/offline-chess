@@ -18,6 +18,7 @@ const state = {
   showBestMove: true,
   showThreats: false,
   annotateOn: true,
+  showAccuracy: false,
   depth: 15,
   thinking: false,
   reviewing: false,
@@ -53,6 +54,8 @@ function startGame() {
   board.drawArrow(null);
   $('result-banner').classList.add('hidden');
   $('review-summary').classList.add('hidden');
+  state.showAccuracy = false;
+  $('accuracy-toggle').checked = false;
   board.setOrientation(state.mode === 'ai' ? state.humanSide : 'w');
   refreshAll();
   maybeEngineTurn();
@@ -200,16 +203,22 @@ function classify(cpLoss, isBest) {
 // Evaluate every position once (N+1 evals), classify each move, and compute a
 // per-side accuracy with a Lichess-style win%-based formula.
 async function reviewGame() {
-  if (!history.length || state.reviewing) return;
+  if (state.reviewing) return;
+  const box = $('review-summary');
+  if (!history.length) {
+    box.innerHTML = '<div class="rev-title">No moves to review yet.</div>';
+    box.classList.remove('hidden');
+    return;
+  }
   state.reviewing = true;
-  const btn = $('review');
-  btn.disabled = true;
   if (analysisAbort) analysisAbort.abort();
+  box.classList.remove('hidden');
 
   const fens = [START_FEN, ...history.map((h) => h.fen)];
   const evals = []; // per position: { cp (side-to-move perspective), bestmove }
   for (let i = 0; i < fens.length; i++) {
-    btn.textContent = `Reviewing… ${i}/${fens.length}`;
+    if (!state.showAccuracy) { box.classList.add('hidden'); state.reviewing = false; return; }
+    box.innerHTML = `<div class="rev-title">Analyzing… ${i}/${fens.length}</div>`;
     const res = await engine.analyze(fens[i], { depth: state.depth, multipv: 1 });
     evals.push({ cp: res.lines[0] ? cpFromInfo(res.lines[0]) : 0, bestmove: res.bestmove });
   }
@@ -230,8 +239,6 @@ async function reviewGame() {
   renderMoveList();
   highlightActiveMove();
   showReviewSummary(acc, counts);
-  btn.disabled = false;
-  btn.textContent = '🔍 Review game';
   state.reviewing = false;
   if (atLiveHuman()) startLiveAnalysis();
 }
@@ -590,7 +597,11 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'End') { e.preventDefault(); goToPly(history.length); }
 });
 
-$('review').addEventListener('click', reviewGame);
+$('accuracy-toggle').addEventListener('change', (e) => {
+  state.showAccuracy = e.target.checked;
+  if (state.showAccuracy) reviewGame();
+  else $('review-summary').classList.add('hidden');
+});
 
 $('new-game').addEventListener('click', startGame);
 $('flip').addEventListener('click', () => board.flip());

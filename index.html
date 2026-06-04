@@ -71,6 +71,10 @@
             <input type="checkbox" id="annotate-toggle" checked />
             <span>Rate my moves</span>
           </label>
+          <label class="toggle">
+            <input type="checkbox" id="accuracy-toggle" />
+            <span>Show accuracy</span>
+          </label>
           <label class="field">
             <span>Depth: <strong id="depth-label">15</strong></span>
             <input type="range" id="depth" min="6" max="22" step="1" value="15" />
@@ -97,7 +101,6 @@
         </section>
         <section class="card grow">
           <h2>Moves</h2>
-          <button id="review" class="btn">🔍 Review game</button>
           <div id="review-summary" class="review-summary hidden"></div>
           <div id="movelist" class="movelist"></div>
         </section>
