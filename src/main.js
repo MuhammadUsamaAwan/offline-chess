@@ -15,13 +15,12 @@ const state = {
   elo: 1500,
   humanSide: 'w',    // which color the human plays in AI mode
   analysisOn: true,
-  showBestMove: true,
+  showBestMove: false,
   showThreats: false,
   annotateOn: true,
-  showAccuracy: false,
+  showAccuracy: true,
   depth: 15,
   thinking: false,
-  reviewing: false,
 };
 
 const history = []; // [{ san, color, from, to, uci, annotation, fen, opening }]
@@ -54,8 +53,7 @@ function startGame() {
   board.drawArrow(null);
   $('result-banner').classList.add('hidden');
   $('review-summary').classList.add('hidden');
-  state.showAccuracy = false;
-  $('accuracy-toggle').checked = false;
+  evalCache.clear();
   board.setOrientation(state.mode === 'ai' ? state.humanSide : 'w');
   refreshAll();
   maybeEngineTurn();
@@ -92,14 +90,14 @@ function recordMove(move, prevFen) {
 
   if (game.isGameOver()) {
     showResult();
-    if (state.annotateOn) annotateMove(prevFen, ply); // still rate the final move
+    scheduleReview();
     return;
   }
 
-  // Dispatch the engine's next job (AI reply or live analysis) BEFORE the
-  // background annotation so the opponent responds promptly.
+  // Dispatch the engine's next job (AI reply or live analysis) before the
+  // background review so the opponent responds promptly.
   maybeEngineTurn();
-  if (state.annotateOn) annotateMove(prevFen, ply);
+  scheduleReview();
 }
 
 function isHumanTurn() {
@@ -158,6 +156,8 @@ function startLiveAnalysis() {
     })
     .then((res) => {
       if (res.aborted || game.fen() !== fen) return;
+      // Reuse this eval for move ratings / accuracy instead of recomputing it.
+      if (res.lines[0]) evalCache.set(fen, { cp: cpFromInfo(res.lines[0]), bestmove: res.lines[0].pv?.[0] });
       if (state.analysisOn) renderLines(res.lines);
       if (state.showBestMove && res.lines[0]?.pv?.[0]) {
         const u = res.lines[0].pv[0];
@@ -169,27 +169,6 @@ function startLiveAnalysis() {
     .catch(() => {});
 }
 
-// ---------- Move rating ----------
-async function annotateMove(prevFen, ply) {
-  try {
-    const annDepth = Math.min(state.depth, 12);
-    const before = await engine.analyze(prevFen, { depth: annDepth, multipv: 1 });
-    const bestUci = before.bestmove;
-    const bestEval = cpFromInfo(before.lines[0]); // perspective: side to move (the mover)
-
-    const afterFen = applyUciToFen(prevFen, history[ply].uci);
-    const after = await engine.analyze(afterFen, { depth: annDepth, multipv: 1 });
-    const moverEvalAfter = -cpFromInfo(after.lines[0]); // flip opponent perspective -> mover
-
-    const cpLoss = Math.max(0, bestEval - moverEvalAfter);
-    const isBest = history[ply].uci === bestUci;
-    history[ply].annotation = classify(cpLoss, isBest);
-    renderMoveList();
-  } catch (e) {
-    /* ignore annotation failures */
-  }
-}
-
 function classify(cpLoss, isBest) {
   if (isBest) return { tag: 'Best', sym: '★', cls: 'best' };
   if (cpLoss <= 20) return { tag: 'Excellent', sym: '!', cls: 'excellent' };
@@ -199,38 +178,51 @@ function classify(cpLoss, isBest) {
   return { tag: 'Blunder', sym: '??', cls: 'blunder' };
 }
 
-// ---------- Full game review ----------
-// Evaluate every position once (N+1 evals), classify each move, and compute a
-// per-side accuracy with a Lichess-style win%-based formula.
-async function reviewGame() {
-  if (state.reviewing) return;
+// ---------- Move review / accuracy ----------
+// Each position is evaluated once and cached by FEN, so as the game grows only
+// the new position costs an engine eval. This powers both the per-move ratings
+// and the accuracy summary, and refreshes automatically after every move.
+const evalCache = new Map(); // fen -> { cp (side-to-move perspective), bestmove }
+let reviewToken = 0;
+
+async function evalPosition(fen) {
+  if (evalCache.has(fen)) return evalCache.get(fen);
+  const res = await engine.analyze(fen, { depth: state.depth, multipv: 1 });
+  const v = { cp: res.lines[0] ? cpFromInfo(res.lines[0]) : 0, bestmove: res.bestmove };
+  evalCache.set(fen, v);
+  return v;
+}
+
+// Run when ratings or the accuracy summary are wanted. Computes annotations for
+// the whole game and (if enabled) the per-side accuracy. Safe to call often.
+function scheduleReview() {
+  if (state.annotateOn || state.showAccuracy) updateReview();
+}
+
+async function updateReview() {
   const box = $('review-summary');
-  if (!history.length) {
-    box.innerHTML = '<div class="rev-title">No moves to review yet.</div>';
-    box.classList.remove('hidden');
-    return;
-  }
-  state.reviewing = true;
-  if (analysisAbort) analysisAbort.abort();
-  box.classList.remove('hidden');
+  if (!history.length) { box.classList.add('hidden'); return; }
+  const token = ++reviewToken;
 
   const fens = [START_FEN, ...history.map((h) => h.fen)];
-  const evals = []; // per position: { cp (side-to-move perspective), bestmove }
+  const evals = [];
   for (let i = 0; i < fens.length; i++) {
-    if (!state.showAccuracy) { box.classList.add('hidden'); state.reviewing = false; return; }
-    box.innerHTML = `<div class="rev-title">Analyzing… ${i}/${fens.length}</div>`;
-    const res = await engine.analyze(fens[i], { depth: state.depth, multipv: 1 });
-    evals.push({ cp: res.lines[0] ? cpFromInfo(res.lines[0]) : 0, bestmove: res.bestmove });
+    if (state.showAccuracy && !evalCache.has(fens[i])) {
+      box.classList.remove('hidden');
+      box.innerHTML = `<div class="rev-title">Analyzing… ${i}/${fens.length}</div>`;
+    }
+    const v = await evalPosition(fens[i]);
+    if (token !== reviewToken) return; // superseded by a newer review
+    evals.push(v);
   }
 
   const acc = { w: [], b: [] };
   const counts = { w: {}, b: {} };
   for (let k = 0; k < history.length; k++) {
     const mover = history[k].color;
-    const bestEval = evals[k].cp;                 // best play, mover perspective
-    const afterEval = -evals[k + 1].cp;           // after the move, mover perspective
-    const cpLoss = Math.max(0, bestEval - afterEval);
-    const ann = classify(cpLoss, history[k].uci === evals[k].bestmove);
+    const bestEval = evals[k].cp;        // best play, mover perspective
+    const afterEval = -evals[k + 1].cp;  // after the move, mover perspective
+    const ann = classify(Math.max(0, bestEval - afterEval), history[k].uci === evals[k].bestmove);
     history[k].annotation = ann;
     counts[mover][ann.tag] = (counts[mover][ann.tag] || 0) + 1;
     acc[mover].push(moveAccuracy(bestEval, afterEval));
@@ -238,9 +230,8 @@ async function reviewGame() {
 
   renderMoveList();
   highlightActiveMove();
-  showReviewSummary(acc, counts);
-  state.reviewing = false;
-  if (atLiveHuman()) startLiveAnalysis();
+  if (state.showAccuracy) showReviewSummary(acc, counts);
+  else box.classList.add('hidden');
 }
 
 function winPct(cp) {
@@ -455,7 +446,7 @@ function moveSpan(h, i) {
   s.className = 'mv';
   s.dataset.ply = i;
   s.textContent = h.san;
-  if (h.annotation) {
+  if (h.annotation && state.annotateOn) {
     const a = document.createElement('sup');
     a.className = 'anno ' + h.annotation.cls;
     a.textContent = h.annotation.sym || '•';
@@ -536,11 +527,6 @@ function pvToSan(fen, pv) {
   }
   return out;
 }
-function applyUciToFen(fen, uci) {
-  const g = new Chess(fen);
-  g.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4) || undefined });
-  return g.fen();
-}
 
 // ---------- Controls ----------
 $('mode-seg').addEventListener('click', (e) => {
@@ -564,7 +550,11 @@ $('depth').addEventListener('input', (e) => {
   state.depth = +e.target.value;
   $('depth-label').textContent = state.depth;
 });
-$('depth').addEventListener('change', () => { if (atLiveHuman()) startLiveAnalysis(); });
+$('depth').addEventListener('change', () => {
+  evalCache.clear(); // cached evals were at the old depth
+  if (atLiveHuman()) startLiveAnalysis();
+  scheduleReview();
+});
 
 $('analysis-toggle').addEventListener('change', (e) => {
   state.analysisOn = e.target.checked;
@@ -580,7 +570,12 @@ $('threats-toggle').addEventListener('change', (e) => {
   state.showThreats = e.target.checked;
   renderBoardForView();
 });
-$('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
+$('annotate-toggle').addEventListener('change', (e) => {
+  state.annotateOn = e.target.checked;
+  renderMoveList();      // show/hide the rating symbols
+  highlightActiveMove();
+  if (state.annotateOn) scheduleReview(); // compute any missing ratings
+});
 $('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
 
 // Move navigation: click a move to jump there; arrow keys / Home / End to step.
@@ -599,7 +594,7 @@ document.addEventListener('keydown', (e) => {
 
 $('accuracy-toggle').addEventListener('change', (e) => {
   state.showAccuracy = e.target.checked;
-  if (state.showAccuracy) reviewGame();
+  if (state.showAccuracy) updateReview();
   else $('review-summary').classList.add('hidden');
 });
 
@@ -621,6 +616,7 @@ $('undo').addEventListener('click', () => {
   if (game.isGameOver() === false) $('result-banner').classList.add('hidden');
   refreshAll();
   if (isHumanTurn()) startLiveAnalysis(); else maybeEngineTurn();
+  scheduleReview();
 });
 
 function flash(el, text) {
