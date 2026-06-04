@@ -40,6 +40,16 @@ export class Board {
         cell.addEventListener('click', () => this._onClick(sq));
         cell.addEventListener('dragover', (e) => e.preventDefault());
         cell.addEventListener('drop', (e) => this._onDrop(e, sq));
+
+        // Piece glyph lives in its own layer so coordinate labels survive renders.
+        const pieceEl = document.createElement('span');
+        pieceEl.className = 'piece';
+        cell.appendChild(pieceEl);
+
+        // Coordinates: ranks down the left edge, files along the bottom edge.
+        if (file === fileOrder[0]) cell.appendChild(makeCoord('rank', rank));
+        if (rank === order[order.length - 1]) cell.appendChild(makeCoord('file', file));
+
         this.el.appendChild(cell);
         this.squares[sq] = cell;
       }
@@ -74,7 +84,7 @@ export class Board {
         const sq = FILES[f] + (8 - r);
         const cell = this.squares[sq];
         const piece = board[r][f];
-        cell.textContent = piece ? GLYPHS[piece.color + piece.type.toUpperCase()] : '';
+        cell.querySelector('.piece').textContent = piece ? GLYPHS[piece.color + piece.type.toUpperCase()] : '';
         cell.classList.toggle('white-piece', piece?.color === 'w');
         cell.classList.toggle('black-piece', piece?.color === 'b');
         cell.draggable = !!piece && this.interactive;
@@ -192,6 +202,13 @@ export class Board {
     line.setAttribute('marker-end', 'url(#ah)');
     this.svg.appendChild(line);
   }
+}
+
+function makeCoord(kind, value) {
+  const el = document.createElement('span');
+  el.className = `coord ${kind}`;
+  el.textContent = value;
+  return el;
 }
 
 function promptPromotion() {

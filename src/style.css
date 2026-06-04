@@ -120,6 +120,17 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
   border: 5px solid rgba(0,0,0,.28); border-radius: 50%;
 }
 
+.piece { line-height: 1; pointer-events: none; }
+.coord {
+  position: absolute; font-size: clamp(8px, calc(var(--board) / 52), 12px);
+  font-weight: 700; line-height: 1; pointer-events: none; user-select: none;
+  text-shadow: none;
+}
+.coord.rank { top: 2px; left: 3px; }
+.coord.file { bottom: 1px; right: 3px; }
+.sq.light > .coord { color: var(--dark); }
+.sq.dark > .coord { color: var(--light); }
+
 .arrows {
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none; color: rgba(255,170,0,.85);
