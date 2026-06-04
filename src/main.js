@@ -15,6 +15,7 @@ const state = {
   elo: 1500,
   humanSide: 'w',    // which color the human plays in AI mode
   analysisOn: true,
+  showBestMove: true,
   annotateOn: true,
   depth: 15,
   thinking: false,
@@ -24,20 +25,11 @@ const history = []; // [{ san, color, from, to, uci, annotation, fen, opening }]
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 let analysisAbort = null;
 let viewPly = 0; // which ply the board is currently showing (history.length === live)
-let hintShown = false; // whether the hint button is currently displaying its arrow
-
-function resetHint() {
-  hintShown = false;
-  const b = document.getElementById('hint');
-  if (b) { b.disabled = false; b.textContent = '💡 Show best move'; }
-}
-
-// The hint button is only useful when live analysis is off; when analysis is
-// on, the best-move arrow is already shown continuously.
-function updateHintVisibility() {
-  const b = document.getElementById('hint');
-  if (b) b.style.display = state.analysisOn ? 'none' : '';
-  if (state.analysisOn) resetHint();
+// True when the board shows the live position and a human is on move — the
+// only time live analysis / best-move arrows should be computed.
+function atLiveHuman() {
+  return viewPly >= history.length && !state.thinking
+    && !game.isGameOver() && isHumanTurn();
 }
 
 // ---------- DOM ----------
@@ -59,7 +51,6 @@ function startGame() {
   board.drawArrow(null);
   $('result-banner').classList.add('hidden');
   board.setOrientation(state.mode === 'ai' ? state.humanSide : 'w');
-  updateHintVisibility();
   refreshAll();
   maybeEngineTurn();
 }
@@ -140,26 +131,33 @@ async function aiMove() {
 }
 
 // ---------- Live analysis ----------
+// Runs the engine if EITHER the analysis panel or the best-move arrow is
+// wanted; each output is rendered according to its own toggle, so the two
+// settings are fully independent.
 function startLiveAnalysis() {
-  if (!state.analysisOn || game.isGameOver()) {
-    renderLines([]);
-    return;
-  }
   if (analysisAbort) analysisAbort.abort();
+  if (!state.showBestMove) board.drawArrow(null);
+  if (!state.analysisOn) renderLines([]);
+
+  if ((!state.analysisOn && !state.showBestMove) || game.isGameOver()) return;
+
   analysisAbort = new AbortController();
   const fen = game.fen();
-  renderLines([], true);
+  const multipv = state.analysisOn ? 3 : 1; // only need 1 line for the arrow
+  if (state.analysisOn) renderLines([], true);
+
   engine
-    .analyze(fen, { depth: state.depth, multipv: 3, signal: analysisAbort.signal }, (lines) => {
+    .analyze(fen, { depth: state.depth, multipv, signal: analysisAbort.signal }, (lines) => {
       if (game.fen() === fen && state.analysisOn) renderLines(lines);
     })
     .then((res) => {
-      // Bail out if this run was superseded/aborted or analysis was turned off.
-      if (res.aborted || !state.analysisOn || game.fen() !== fen) return;
-      renderLines(res.lines);
-      if (res.lines[0]?.pv?.[0]) {
+      if (res.aborted || game.fen() !== fen) return;
+      if (state.analysisOn) renderLines(res.lines);
+      if (state.showBestMove && res.lines[0]?.pv?.[0]) {
         const u = res.lines[0].pv[0];
         board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
+      } else if (!state.showBestMove) {
+        board.drawArrow(null);
       }
     })
     .catch(() => {});
@@ -200,7 +198,6 @@ function classify(cpLoss, isBest) {
 // view to the live position and redraw everything.
 function refreshAll() {
   viewPly = history.length;
-  resetHint();
   renderMoveList();
   renderBoardForView();
   updateEvalBarFromTurn();
@@ -235,12 +232,8 @@ function goToPly(p) {
   const target = Math.max(0, Math.min(history.length, p));
   if (target === viewPly) return;
   viewPly = target;
-  resetHint();
   renderBoardForView();
-  if (viewPly >= history.length && state.analysisOn && !state.thinking
-      && !game.isGameOver() && isHumanTurn()) {
-    startLiveAnalysis();
-  }
+  if (atLiveHuman()) startLiveAnalysis();
 }
 
 function highlightActiveMove() {
@@ -442,43 +435,17 @@ $('depth').addEventListener('input', (e) => {
   state.depth = +e.target.value;
   $('depth-label').textContent = state.depth;
 });
-$('depth').addEventListener('change', () => { if (isHumanTurn()) startLiveAnalysis(); });
-
-$('hint').addEventListener('click', async () => {
-  const btn = $('hint');
-  // Toggle off: a hint arrow is already showing -> clear it.
-  if (hintShown) { board.drawArrow(null); resetHint(); return; }
-  // Only hint the live position, and only when a move is to be made.
-  if (game.isGameOver() || viewPly < history.length) return;
-  const fen = game.fen();
-  btn.disabled = true;
-  btn.textContent = 'Thinking…';
-  try {
-    const res = await engine.analyze(fen, { depth: state.depth, multipv: 1 });
-    const u = res.bestmove || res.lines[0]?.pv?.[0];
-    if (u && game.fen() === fen) {
-      board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
-      hintShown = true;
-      btn.disabled = false;
-      btn.textContent = '💡 Hide best move';
-      return;
-    }
-  } catch { /* ignore */ }
-  btn.disabled = false;
-  resetHint();
-});
+$('depth').addEventListener('change', () => { if (atLiveHuman()) startLiveAnalysis(); });
 
 $('analysis-toggle').addEventListener('change', (e) => {
   state.analysisOn = e.target.checked;
-  if (state.analysisOn) {
-    if (isHumanTurn()) startLiveAnalysis();
-  } else {
-    if (analysisAbort) analysisAbort.abort();
-    board.drawArrow(null);
-    renderLines([]);
-    resetHint();
-  }
-  updateHintVisibility();
+  if (!state.analysisOn) renderLines([]); // hide lines + eval bar immediately
+  if (atLiveHuman()) startLiveAnalysis();
+});
+$('bestmove-toggle').addEventListener('change', (e) => {
+  state.showBestMove = e.target.checked;
+  if (!state.showBestMove) board.drawArrow(null);
+  if (atLiveHuman()) startLiveAnalysis();
 });
 $('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
 $('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
