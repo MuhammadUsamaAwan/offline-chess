@@ -1,6 +1,7 @@
 import { Chess } from 'chess.js';
 import { Engine } from './engine.js';
 import { Board } from './board.js';
+import openings from './openings.json';
 import './style.css';
 
 // ---------- State ----------
@@ -61,6 +62,11 @@ function recordMove(move, prevFen) {
     uci: move.from + move.to + (move.promotion || ''),
     annotation: null,
   });
+  // Opening name: use the most specific match for this position, otherwise
+  // carry forward the previous move's opening so it persists out of book.
+  const matched = openings[fenKey(game.fen())];
+  history[ply].opening = matched || history[ply - 1]?.opening || null;
+
   board.setLastMove(move);
   board.drawArrow(null);
   refreshAll();
@@ -172,6 +178,16 @@ function refreshAll() {
   renderMoveList();
   updateTurnIndicator();
   updateEvalBarFromTurn();
+  updateOpening();
+}
+
+function updateOpening() {
+  $('opening').textContent = history.at(-1)?.opening || 'Starting position';
+}
+
+// FEN reduced to the fields that define a position for opening lookup.
+function fenKey(fen) {
+  return fen.split(' ').slice(0, 4).join(' ');
 }
 
 function updateTurnIndicator() {

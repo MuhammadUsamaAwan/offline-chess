@@ -140,6 +140,7 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .lines .ev.eq { color: var(--muted); }
 .lines .pv { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .muted { color: var(--muted); font-size: 13px; }
+.opening { font-size: 14px; font-weight: 600; color: var(--accent); line-height: 1.4; }
 
 /* Move list */
 .movelist { overflow-y: auto; max-height: 40vh; font-size: 14px; }
