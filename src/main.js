@@ -24,6 +24,13 @@ const history = []; // [{ san, color, from, to, uci, annotation, fen, opening }]
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 let analysisAbort = null;
 let viewPly = 0; // which ply the board is currently showing (history.length === live)
+let hintShown = false; // whether the hint button is currently displaying its arrow
+
+function resetHint() {
+  hintShown = false;
+  const b = document.getElementById('hint');
+  if (b) { b.disabled = false; b.textContent = '💡 Show best move'; }
+}
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -184,6 +191,7 @@ function classify(cpLoss, isBest) {
 // view to the live position and redraw everything.
 function refreshAll() {
   viewPly = history.length;
+  resetHint();
   renderMoveList();
   renderBoardForView();
   updateEvalBarFromTurn();
@@ -218,6 +226,7 @@ function goToPly(p) {
   const target = Math.max(0, Math.min(history.length, p));
   if (target === viewPly) return;
   viewPly = target;
+  resetHint();
   renderBoardForView();
   if (viewPly >= history.length && state.analysisOn && !state.thinking
       && !game.isGameOver() && isHumanTurn()) {
@@ -427,10 +436,11 @@ $('depth').addEventListener('input', (e) => {
 $('depth').addEventListener('change', () => { if (isHumanTurn()) startLiveAnalysis(); });
 
 $('hint').addEventListener('click', async () => {
+  const btn = $('hint');
+  // Toggle off: a hint arrow is already showing -> clear it.
+  if (hintShown) { board.drawArrow(null); resetHint(); return; }
   // Only hint the live position, and only when a move is to be made.
   if (game.isGameOver() || viewPly < history.length) return;
-  const btn = $('hint');
-  const original = btn.textContent;
   const fen = game.fen();
   btn.disabled = true;
   btn.textContent = 'Thinking…';
@@ -439,10 +449,14 @@ $('hint').addEventListener('click', async () => {
     const u = res.bestmove || res.lines[0]?.pv?.[0];
     if (u && game.fen() === fen) {
       board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
+      hintShown = true;
+      btn.disabled = false;
+      btn.textContent = '💡 Hide best move';
+      return;
     }
   } catch { /* ignore */ }
   btn.disabled = false;
-  btn.textContent = original;
+  resetHint();
 });
 
 $('analysis-toggle').addEventListener('change', (e) => {
@@ -453,6 +467,7 @@ $('analysis-toggle').addEventListener('change', (e) => {
     if (analysisAbort) analysisAbort.abort();
     board.drawArrow(null);
     renderLines([]);
+    resetHint();
   }
 });
 $('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
