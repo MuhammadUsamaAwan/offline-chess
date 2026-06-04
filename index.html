@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Offline Chess Analyzer</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <h1>♞ Chess Analyzer <span class="badge">offline</span></h1>
+      <div id="engine-status" class="engine-status" title="Engine status">engine: loading…</div>
+    </header>
+
+    <main class="layout">
+      <!-- Left: controls -->
+      <aside class="panel controls">
+        <section class="card">
+          <h2>Game mode</h2>
+          <div class="seg" id="mode-seg">
+            <button data-mode="ai" class="active">vs AI</button>
+            <button data-mode="human">vs Human</button>
+          </div>
+
+          <div id="ai-options">
+            <label class="field">
+              <span>AI strength: <strong id="elo-label">1500 Elo</strong></span>
+              <input type="range" id="elo" min="600" max="2850" step="50" value="1500" />
+            </label>
+            <label class="field">
+              <span>You play as</span>
+              <select id="ai-side">
+                <option value="w" selected>White</option>
+                <option value="b">Black</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Board</h2>
+          <div class="row">
+            <button id="new-game" class="btn primary">New game</button>
+            <button id="undo" class="btn">Undo</button>
+          </div>
+          <div class="row">
+            <button id="flip" class="btn">Flip board</button>
+            <button id="copy-fen" class="btn">Copy FEN</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Analysis</h2>
+          <label class="toggle">
+            <input type="checkbox" id="analysis-toggle" checked />
+            <span>Show analysis</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="annotate-toggle" checked />
+            <span>Rate my moves</span>
+          </label>
+          <label class="field">
+            <span>Depth: <strong id="depth-label">15</strong></span>
+            <input type="range" id="depth" min="6" max="22" step="1" value="15" />
+          </label>
+        </section>
+      </aside>
+
+      <!-- Center: board -->
+      <section class="board-wrap">
+        <div id="eval-bar" class="eval-bar"><div id="eval-fill" class="eval-fill"></div><span id="eval-num" class="eval-num">0.0</span></div>
+        <div id="board" class="board"></div>
+        <div id="turn-indicator" class="turn-indicator">White to move</div>
+      </section>
+
+      <!-- Right: analysis + moves -->
+      <aside class="panel info">
+        <section class="card">
+          <h2>Best lines</h2>
+          <ol id="lines" class="lines"><li class="muted">Analysis hidden / off.</li></ol>
+        </section>
+        <section class="card grow">
+          <h2>Moves</h2>
+          <div id="movelist" class="movelist"></div>
+        </section>
+        <div id="result-banner" class="result-banner hidden"></div>
+      </aside>
+    </main>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

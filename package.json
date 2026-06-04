@@ -1,0 +1,18 @@
+{
+  "name": "offline-chess-analyzer",
+  "version": "1.0.0",
+  "description": "Offline chess analyzer: play vs AI (adjustable Elo), vs human, with live engine analysis.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "stockfish": "^18.0.7"
+  }
+}
