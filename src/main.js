@@ -135,10 +135,11 @@ function startLiveAnalysis() {
   renderLines([], true);
   engine
     .analyze(fen, { depth: state.depth, multipv: 3, signal: analysisAbort.signal }, (lines) => {
-      if (game.fen() === fen) renderLines(lines);
+      if (game.fen() === fen && state.analysisOn) renderLines(lines);
     })
     .then((res) => {
-      if (game.fen() !== fen) return;
+      // Bail out if this run was superseded/aborted or analysis was turned off.
+      if (res.aborted || !state.analysisOn || game.fen() !== fen) return;
       renderLines(res.lines);
       if (res.lines[0]?.pv?.[0]) {
         const u = res.lines[0].pv[0];
@@ -438,10 +439,6 @@ $('hint').addEventListener('click', async () => {
     const u = res.bestmove || res.lines[0]?.pv?.[0];
     if (u && game.fen() === fen) {
       board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
-      btn.disabled = false;
-      btn.textContent = original;
-      flash(btn, `Best: ${pvToSan(fen, [u])[0] || u}`);
-      return;
     }
   } catch { /* ignore */ }
   btn.disabled = false;
