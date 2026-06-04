@@ -158,7 +158,9 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .move-row { display: grid; grid-template-columns: 32px 1fr 1fr; gap: 6px; padding: 3px 4px; border-radius: 4px; }
 .move-row:nth-child(odd) { background: rgba(255,255,255,.03); }
 .num { color: var(--muted); }
-.mv { font-variant-numeric: tabular-nums; }
+.mv { font-variant-numeric: tabular-nums; cursor: pointer; border-radius: 3px; padding: 0 3px; }
+.mv:hover { background: rgba(110,168,254,.18); }
+.mv.active { background: var(--accent); color: #11151c; }
 .anno { font-size: 11px; margin-left: 2px; font-weight: 700; }
 .anno.best { color: var(--best); }
 .anno.excellent { color: #5fd0d0; }

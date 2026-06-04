@@ -20,8 +20,10 @@ const state = {
   thinking: false,
 };
 
-const history = []; // [{ san, color, from, to, uci, annotation }]
+const history = []; // [{ san, color, from, to, uci, annotation, fen, opening }]
+const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 let analysisAbort = null;
+let viewPly = 0; // which ply the board is currently showing (history.length === live)
 
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -63,6 +65,7 @@ function recordMove(move, prevFen) {
     to: move.to,
     uci: move.from + move.to + (move.promotion || ''),
     annotation: null,
+    fen: game.fen(),
   });
   // Opening name: use the most specific match for this position, otherwise
   // carry forward the previous move's opening so it persists out of book.
@@ -176,12 +179,58 @@ function classify(cpLoss, isBest) {
 }
 
 // ---------- Rendering ----------
+// Called whenever the game itself changes (move / undo / new game): snap the
+// view to the live position and redraw everything.
 function refreshAll() {
-  board.render(game);
+  viewPly = history.length;
   renderMoveList();
-  updateTurnIndicator();
+  renderBoardForView();
   updateEvalBarFromTurn();
   updateOpening();
+}
+
+function lastMoveOf(i) {
+  return { from: history[i].from, to: history[i].to };
+}
+
+// Render the board for the currently viewed ply (live or a past position).
+function renderBoardForView() {
+  const atLive = viewPly >= history.length;
+  if (atLive) {
+    board.setInteractive(!state.thinking);
+    board.setLastMove(history.length ? lastMoveOf(history.length - 1) : null);
+    board.render(game);
+    updateTurnIndicator();
+  } else {
+    board.setInteractive(false);
+    const fen = viewPly === 0 ? START_FEN : history[viewPly - 1].fen;
+    board.setLastMove(viewPly > 0 ? lastMoveOf(viewPly - 1) : null);
+    board.drawArrow(null);
+    board.render(new Chess(fen));
+    setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
+  }
+  highlightActiveMove();
+}
+
+// Step to a specific ply and, when resuming the live position, restart analysis.
+function goToPly(p) {
+  const target = Math.max(0, Math.min(history.length, p));
+  if (target === viewPly) return;
+  viewPly = target;
+  renderBoardForView();
+  if (viewPly >= history.length && state.analysisOn && !state.thinking
+      && !game.isGameOver() && isHumanTurn()) {
+    startLiveAnalysis();
+  }
+}
+
+function highlightActiveMove() {
+  const box = $('movelist');
+  box.querySelectorAll('.mv.active').forEach((el) => el.classList.remove('active'));
+  if (viewPly > 0) {
+    const el = box.querySelector(`.mv[data-ply="${viewPly - 1}"]`);
+    if (el) { el.classList.add('active'); el.scrollIntoView({ block: 'nearest' }); }
+  }
 }
 
 function playMoveSound(move) {
@@ -253,16 +302,17 @@ function renderMoveList() {
     num.className = 'num';
     num.textContent = (i / 2 + 1) + '.';
     row.appendChild(num);
-    row.appendChild(moveSpan(history[i]));
-    if (history[i + 1]) row.appendChild(moveSpan(history[i + 1]));
+    row.appendChild(moveSpan(history[i], i));
+    if (history[i + 1]) row.appendChild(moveSpan(history[i + 1], i + 1));
     box.appendChild(row);
   }
   box.scrollTop = box.scrollHeight;
 }
 
-function moveSpan(h) {
+function moveSpan(h, i) {
   const s = document.createElement('span');
   s.className = 'mv';
+  s.dataset.ply = i;
   s.textContent = h.san;
   if (h.annotation) {
     const a = document.createElement('sup');
@@ -387,6 +437,20 @@ $('analysis-toggle').addEventListener('change', (e) => {
 });
 $('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
 $('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
+
+// Move navigation: click a move to jump there; arrow keys / Home / End to step.
+$('movelist').addEventListener('click', (e) => {
+  const mv = e.target.closest('.mv');
+  if (mv) goToPly(+mv.dataset.ply + 1);
+});
+document.addEventListener('keydown', (e) => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); goToPly(viewPly - 1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); goToPly(viewPly + 1); }
+  else if (e.key === 'Home') { e.preventDefault(); goToPly(0); }
+  else if (e.key === 'End') { e.preventDefault(); goToPly(history.length); }
+});
 
 $('new-game').addEventListener('click', startGame);
 $('flip').addEventListener('click', () => board.flip());
