@@ -111,6 +111,7 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .sq.sel { box-shadow: inset 0 0 0 4px var(--sel); }
 .sq.last { background-image: linear-gradient(rgba(205,210,106,.55), rgba(205,210,106,.55)); }
 .sq.check { background-image: radial-gradient(circle, rgba(229,115,115,.9), transparent 70%); }
+.sq.threat { outline: 3px solid rgba(231,76,60,.9); outline-offset: -3px; border-radius: 2px; }
 .sq.target::after {
   content: ''; position: absolute; width: 30%; height: 30%;
   background: rgba(0,0,0,.28); border-radius: 50%;

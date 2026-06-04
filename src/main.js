@@ -16,6 +16,7 @@ const state = {
   humanSide: 'w',    // which color the human plays in AI mode
   analysisOn: true,
   showBestMove: true,
+  showThreats: false,
   annotateOn: true,
   depth: 15,
   thinking: false,
@@ -211,20 +212,63 @@ function lastMoveOf(i) {
 // Render the board for the currently viewed ply (live or a past position).
 function renderBoardForView() {
   const atLive = viewPly >= history.length;
+  const g = atLive ? game : new Chess(viewPly === 0 ? START_FEN : history[viewPly - 1].fen);
+  board.setThreats(state.showThreats ? hangingSquares(g) : []);
   if (atLive) {
     board.setInteractive(!state.thinking);
     board.setLastMove(history.length ? lastMoveOf(history.length - 1) : null);
-    board.render(game);
-    updateTurnIndicator();
   } else {
     board.setInteractive(false);
-    const fen = viewPly === 0 ? START_FEN : history[viewPly - 1].fen;
     board.setLastMove(viewPly > 0 ? lastMoveOf(viewPly - 1) : null);
     board.drawArrow(null);
-    board.render(new Chess(fen));
-    setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
   }
+  board.render(g);
+  if (atLive) updateTurnIndicator();
+  else setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
   highlightActiveMove();
+}
+
+// ---------- Threats / hanging pieces ----------
+const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+const SEE_VAL = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 };
+
+// Squares holding a piece that the opposing side can win material by capturing
+// (static exchange evaluation > 0). Covers both colors: your hanging pieces and
+// the opponent's. Pure board math — no engine needed.
+function hangingSquares(g) {
+  const out = [];
+  const b = g.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      if (!b[r][f]) continue;
+      const sq = FILES[f] + (8 - r);
+      if (seeOnSquare(g, sq) > 0) out.push(sq);
+    }
+  }
+  return out;
+}
+
+// Static Exchange Evaluation: material the attacking side gains by initiating
+// captures on `sq` (ignores x-ray/pins/promotions — good enough for a hint).
+function seeOnSquare(g, sq) {
+  const target = g.get(sq);
+  if (!target || target.type === 'k') return 0;
+  const enemy = target.color === 'w' ? 'b' : 'w';
+  const atk = g.attackers(sq, enemy).map((s) => SEE_VAL[g.get(s).type]).sort((a, b) => a - b);
+  if (atk.length === 0) return 0;
+  const def = g.attackers(sq, target.color).map((s) => SEE_VAL[g.get(s).type]).sort((a, b) => a - b);
+
+  // Interleave the least-valuable capturer of each side, enemy capturing first.
+  const caps = [];
+  let ai = 0, di = 0, side = 0;
+  while (side === 0 ? ai < atk.length : di < def.length) {
+    caps.push(side === 0 ? atk[ai++] : def[di++]);
+    side ^= 1;
+  }
+  const gain = [SEE_VAL[target.type]];
+  for (let d = 1; d <= caps.length; d++) gain[d] = caps[d - 1] - gain[d - 1];
+  for (let d = caps.length - 1; d >= 1; d--) gain[d - 1] = -Math.max(-gain[d - 1], gain[d]);
+  return gain[0];
 }
 
 // Step to a specific ply and, when resuming the live position, restart analysis.
@@ -446,6 +490,10 @@ $('bestmove-toggle').addEventListener('change', (e) => {
   state.showBestMove = e.target.checked;
   if (!state.showBestMove) board.drawArrow(null);
   if (atLiveHuman()) startLiveAnalysis();
+});
+$('threats-toggle').addEventListener('change', (e) => {
+  state.showThreats = e.target.checked;
+  renderBoardForView();
 });
 $('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
 $('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
