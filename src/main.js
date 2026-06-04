@@ -32,6 +32,14 @@ function resetHint() {
   if (b) { b.disabled = false; b.textContent = '💡 Show best move'; }
 }
 
+// The hint button is only useful when live analysis is off; when analysis is
+// on, the best-move arrow is already shown continuously.
+function updateHintVisibility() {
+  const b = document.getElementById('hint');
+  if (b) b.style.display = state.analysisOn ? 'none' : '';
+  if (state.analysisOn) resetHint();
+}
+
 // ---------- DOM ----------
 const $ = (id) => document.getElementById(id);
 const board = new Board($('board'), { onMove: handleHumanMove });
@@ -51,6 +59,7 @@ function startGame() {
   board.drawArrow(null);
   $('result-banner').classList.add('hidden');
   board.setOrientation(state.mode === 'ai' ? state.humanSide : 'w');
+  updateHintVisibility();
   refreshAll();
   maybeEngineTurn();
 }
@@ -469,6 +478,7 @@ $('analysis-toggle').addEventListener('change', (e) => {
     renderLines([]);
     resetHint();
   }
+  updateHintVisibility();
 });
 $('annotate-toggle').addEventListener('change', (e) => { state.annotateOn = e.target.checked; });
 $('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
