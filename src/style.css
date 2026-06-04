@@ -170,6 +170,21 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .anno.mistake { color: #e29a4b; }
 .anno.blunder { color: #e06c75; }
 
+#review { width: 100%; margin-bottom: 10px; }
+.review-summary { margin-bottom: 10px; font-size: 13px; }
+.rev-title { color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: .05em; margin-bottom: 4px; }
+.rev-row { display: grid; grid-template-columns: 48px 56px 1fr; align-items: center; gap: 6px; padding: 3px 0; }
+.rev-side { color: var(--muted); }
+.rev-acc { font-weight: 700; font-variant-numeric: tabular-nums; }
+.rev-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.rc { font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 8px; background: rgba(255,255,255,.06); }
+.rc.best { color: var(--best); }
+.rc.excellent { color: #5fd0d0; }
+.rc.good { color: #9aa0a8; }
+.rc.inaccuracy { color: #e5c07b; }
+.rc.mistake { color: #e29a4b; }
+.rc.blunder { color: #e06c75; }
+
 .result-banner {
   background: var(--accent); color: #11151c; font-weight: 600;
   padding: 12px; border-radius: 8px; text-align: center;

@@ -9,11 +9,18 @@ the first install. The engine is Stockfish 18 (lite NNUE) compiled to WebAssembl
 
 - **Play vs AI** — strength slider from ~600 to 2850 Elo. Choose your color.
 - **Play vs Human** — two players, same screen (pass-and-play).
-- **Live analysis** — top 3 engine lines with evaluations, a best-move arrow on
-  the board, and an evaluation bar. Toggle on/off.
+- **Live analysis** — top 3 engine lines with evaluations and an evaluation bar.
+- **Best-move arrow** — drawn on the board; independent toggle from the analysis panel.
 - **Move ratings** — each move is graded ★ Best / Excellent / Good /
   Inaccuracy (?!) / Mistake (?) / Blunder (??) based on centipawn loss. Toggle on/off.
-- **Adjustable search depth**, board flip, undo, copy FEN.
+- **Full game review** — one button evaluates every move and reports a per-side
+  accuracy % plus a breakdown of move quality.
+- **Threats / hanging pieces** — optional red highlight on any piece (either color)
+  that can be profitably captured (static exchange evaluation).
+- **Move navigation** — click a move or use ←/→/Home/End to step through the game.
+- **Opening names** from the Lichess ECO database.
+- **Sound effects** for moves, captures, castling, check, promotion, and game end.
+- **Adjustable search depth**, board flip, undo, copy FEN, board coordinates.
 - Click-to-move or drag-and-drop, with legal-move dots, last-move and check
   highlighting, and pawn promotion prompts.
 

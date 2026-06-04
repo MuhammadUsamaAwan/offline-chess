@@ -20,6 +20,7 @@ const state = {
   annotateOn: true,
   depth: 15,
   thinking: false,
+  reviewing: false,
 };
 
 const history = []; // [{ san, color, from, to, uci, annotation, fen, opening }]
@@ -51,6 +52,7 @@ function startGame() {
   board.setLastMove(null);
   board.drawArrow(null);
   $('result-banner').classList.add('hidden');
+  $('review-summary').classList.add('hidden');
   board.setOrientation(state.mode === 'ai' ? state.humanSide : 'w');
   refreshAll();
   maybeEngineTurn();
@@ -192,6 +194,82 @@ function classify(cpLoss, isBest) {
   if (cpLoss <= 100) return { tag: 'Inaccuracy', sym: '?!', cls: 'inaccuracy' };
   if (cpLoss <= 250) return { tag: 'Mistake', sym: '?', cls: 'mistake' };
   return { tag: 'Blunder', sym: '??', cls: 'blunder' };
+}
+
+// ---------- Full game review ----------
+// Evaluate every position once (N+1 evals), classify each move, and compute a
+// per-side accuracy with a Lichess-style win%-based formula.
+async function reviewGame() {
+  if (!history.length || state.reviewing) return;
+  state.reviewing = true;
+  const btn = $('review');
+  btn.disabled = true;
+  if (analysisAbort) analysisAbort.abort();
+
+  const fens = [START_FEN, ...history.map((h) => h.fen)];
+  const evals = []; // per position: { cp (side-to-move perspective), bestmove }
+  for (let i = 0; i < fens.length; i++) {
+    btn.textContent = `Reviewing… ${i}/${fens.length}`;
+    const res = await engine.analyze(fens[i], { depth: state.depth, multipv: 1 });
+    evals.push({ cp: res.lines[0] ? cpFromInfo(res.lines[0]) : 0, bestmove: res.bestmove });
+  }
+
+  const acc = { w: [], b: [] };
+  const counts = { w: {}, b: {} };
+  for (let k = 0; k < history.length; k++) {
+    const mover = history[k].color;
+    const bestEval = evals[k].cp;                 // best play, mover perspective
+    const afterEval = -evals[k + 1].cp;           // after the move, mover perspective
+    const cpLoss = Math.max(0, bestEval - afterEval);
+    const ann = classify(cpLoss, history[k].uci === evals[k].bestmove);
+    history[k].annotation = ann;
+    counts[mover][ann.tag] = (counts[mover][ann.tag] || 0) + 1;
+    acc[mover].push(moveAccuracy(bestEval, afterEval));
+  }
+
+  renderMoveList();
+  highlightActiveMove();
+  showReviewSummary(acc, counts);
+  btn.disabled = false;
+  btn.textContent = '🔍 Review game';
+  state.reviewing = false;
+  if (atLiveHuman()) startLiveAnalysis();
+}
+
+function winPct(cp) {
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+}
+function moveAccuracy(beforeCp, afterCp) {
+  const a = 103.1668 * Math.exp(-0.04354 * (winPct(beforeCp) - winPct(afterCp))) - 3.1669;
+  return Math.max(0, Math.min(100, a));
+}
+function mean(arr) {
+  return arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null;
+}
+
+const SUMMARY_TAGS = [
+  { tag: 'Best', sym: '★', cls: 'best' },
+  { tag: 'Excellent', sym: '!', cls: 'excellent' },
+  { tag: 'Good', sym: '✓', cls: 'good' },
+  { tag: 'Inaccuracy', sym: '?!', cls: 'inaccuracy' },
+  { tag: 'Mistake', sym: '?', cls: 'mistake' },
+  { tag: 'Blunder', sym: '??', cls: 'blunder' },
+];
+
+function showReviewSummary(acc, counts) {
+  const box = $('review-summary');
+  const row = (label, color) => {
+    const a = mean(acc[color]);
+    const chips = SUMMARY_TAGS
+      .filter((t) => counts[color][t.tag])
+      .map((t) => `<span class="rc ${t.cls}">${t.sym || '✓'} ${counts[color][t.tag]}</span>`)
+      .join('');
+    return `<div class="rev-row"><span class="rev-side">${label}</span>
+      <span class="rev-acc">${a == null ? '—' : a.toFixed(1) + '%'}</span>
+      <span class="rev-chips">${chips || '—'}</span></div>`;
+  };
+  box.innerHTML = `<div class="rev-title">Accuracy</div>${row('White', 'w')}${row('Black', 'b')}`;
+  box.classList.remove('hidden');
 }
 
 // ---------- Rendering ----------
@@ -511,6 +589,8 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') { e.preventDefault(); goToPly(0); }
   else if (e.key === 'End') { e.preventDefault(); goToPly(history.length); }
 });
+
+$('review').addEventListener('click', reviewGame);
 
 $('new-game').addEventListener('click', startGame);
 $('flip').addEventListener('click', () => board.flip());
