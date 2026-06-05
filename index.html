@@ -47,11 +47,16 @@
             <button id="flip" class="btn">Flip board</button>
             <button id="copy-fen" class="btn">Copy FEN</button>
           </div>
+          <div class="row">
+            <button id="copy-pgn" class="btn">Copy PGN</button>
+            <button id="export-pgn" class="btn">Export PGN</button>
+          </div>
           <details class="paste">
-            <summary>Paste moves</summary>
-            <textarea id="moves-input" rows="3" placeholder="1. d4 g6 2. Bf4 d6 3. Nf3 Bg7 4. c3"></textarea>
+            <summary>Import PGN / moves</summary>
+            <textarea id="moves-input" rows="3" placeholder="Paste a PGN (with comments/NAGs) or plain moves:&#10;1. d4 g6 2. Bf4 d6 3. Nf3 Bg7 4. c3"></textarea>
             <div id="paste-error" class="paste-error hidden"></div>
-            <button id="load-moves" class="btn primary">Load moves</button>
+            <button id="load-moves" class="btn primary">Import</button>
+            <p class="paste-hint">…or drop a <code>.pgn</code> file anywhere on the page.</p>
           </details>
           <label class="toggle">
             <input type="checkbox" id="sound-toggle" checked />
@@ -113,6 +118,7 @@
         <div id="result-banner" class="result-banner hidden"></div>
       </aside>
     </main>
+    <div id="drop-overlay" class="drop-overlay hidden"><span>Drop a .pgn file to import</span></div>
   </div>
   <script type="module" src="/src/main.js"></script>
 </body>

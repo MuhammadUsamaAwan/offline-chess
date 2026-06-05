@@ -64,6 +64,55 @@ function startGame() {
   maybeEngineTurn();
 }
 
+// Import a game from pasted/dropped text. Full PGN (with header tags, comments
+// or NAGs) is parsed by chess.js for robustness; anything else falls through to
+// the lenient move-list parser below. Returns an error message, or null on
+// success.
+function importGame(text) {
+  const raw = (text || '').trim();
+  if (!raw) return 'Nothing to import.';
+
+  const looksPgn = /\[\s*\w+\s+"/.test(raw) || /\{[^}]*\}/.test(raw) || /\$\d+/.test(raw);
+  if (!looksPgn) return loadMoves(raw);
+
+  const probe = new Chess();
+  try {
+    probe.loadPgn(raw);
+  } catch (e) {
+    return `Couldn't parse PGN: ${e.message || 'invalid format'}.`;
+  }
+  const headers = probe.getHeaders();
+  if (headers.FEN || headers.SetUp) {
+    return "PGN starts from a custom position, which isn't supported yet.";
+  }
+  const moves = probe.history({ verbose: true });
+  if (!moves.length) return 'PGN contained no moves.';
+
+  if (analysisAbort) analysisAbort.abort();
+  game.reset();
+  history.length = 0;
+  evalCache.clear();
+  for (const mv of moves) {
+    appendHistory(game.move({ from: mv.from, to: mv.to, promotion: mv.promotion }));
+  }
+  finishImport();
+  return null;
+}
+
+// Build a PGN string for the current game, stamping a few standard header tags
+// (chess.js appends the result token automatically when the game is over).
+function buildPgn() {
+  game.setHeader('Event', 'Offline Chess Analyzer');
+  game.setHeader('Site', 'offline');
+  game.setHeader('Date', new Date().toISOString().slice(0, 10).replace(/-/g, '.'));
+  if (state.mode === 'ai') {
+    const ai = `Stockfish (${state.elo})`;
+    game.setHeader(state.humanSide === 'w' ? 'Black' : 'White', ai);
+    game.setHeader(state.humanSide === 'w' ? 'White' : 'Black', 'Human');
+  }
+  return game.pgn({ maxWidth: 80 });
+}
+
 // Import a sequence of moves pasted as SAN/PGN text, e.g.
 // "1. d4 g6 2. Bf4 d6 3. Nf3 Bg7 4. c3". Strips move numbers, comments,
 // variations, NAGs and the result token, then replays the moves from the
@@ -788,16 +837,65 @@ $('accuracy-toggle').addEventListener('change', (e) => {
   else $('review-summary').classList.add('hidden');
 });
 
-$('load-moves').addEventListener('click', () => {
-  const err = loadMoves($('moves-input').value);
+function runImport(text, { clearOnSuccess = false } = {}) {
+  const err = importGame(text);
   const box = $('paste-error');
   if (err) {
     box.textContent = err;
     box.classList.remove('hidden');
   } else {
     box.classList.add('hidden');
-    $('moves-input').value = '';
+    if (clearOnSuccess) $('moves-input').value = '';
   }
+  return !err;
+}
+
+$('load-moves').addEventListener('click', () => {
+  runImport($('moves-input').value, { clearOnSuccess: true });
+});
+
+$('copy-pgn').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(buildPgn());
+  flash($('copy-pgn'), 'Copied!');
+});
+
+$('export-pgn').addEventListener('click', () => {
+  const blob = new Blob([buildPgn()], { type: 'application/x-chess-pgn' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `game-${new Date().toISOString().slice(0, 10)}.pgn`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ---------- Drag & drop a .pgn file anywhere on the page ----------
+const dropOverlay = $('drop-overlay');
+let dragDepth = 0; // dragenter/leave fire per child element; count to know when we truly left
+function hasFiles(e) {
+  return Array.from(e.dataTransfer?.types || []).includes('Files');
+}
+window.addEventListener('dragenter', (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  if (dragDepth++ === 0) dropOverlay.classList.remove('hidden');
+});
+window.addEventListener('dragover', (e) => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener('dragleave', (e) => {
+  if (!hasFiles(e)) return;
+  if (--dragDepth <= 0) { dragDepth = 0; dropOverlay.classList.add('hidden'); }
+});
+window.addEventListener('drop', async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.add('hidden');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const text = await file.text();
+  $('moves-input').value = text;
+  $('app')?.querySelector('.paste')?.setAttribute('open', '');
+  runImport(text);
 });
 
 $('new-game').addEventListener('click', startGame);
