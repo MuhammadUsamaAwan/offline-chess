@@ -159,7 +159,10 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .lines .ev.pos { color: #7ec699; }
 .lines .ev.neg { color: #e08585; }
 .lines .ev.eq { color: var(--muted); }
-.lines .pv { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lines .pv { color: var(--muted); line-height: 1.7; }
+.lines .pvnum { color: var(--muted); opacity: .65; margin-right: 1px; }
+.lines .pvm { cursor: pointer; padding: 1px 3px; border-radius: 4px; color: var(--text); }
+.lines .pvm:hover { background: var(--accent); color: #0b0d10; }
 .muted { color: var(--muted); font-size: 13px; }
 .opening { font-size: 14px; font-weight: 600; color: var(--accent); line-height: 1.4; }
 

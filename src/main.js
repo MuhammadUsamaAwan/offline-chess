@@ -27,6 +27,11 @@ const history = []; // [{ san, color, from, to, uci, annotation, fen, opening }]
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 let analysisAbort = null;
 let viewPly = 0; // which ply the board is currently showing (history.length === live)
+// Latest engine lines and the FEN they were computed at, so the "Best lines"
+// panel can preview a variation on the board without touching game/history.
+let currentLines = [];
+let analyzedFen = START_FEN;
+let previewing = false;
 // True when the board shows the live position and a human is on move — the
 // only time live analysis / best-move arrows should be computed.
 function atLiveHuman() {
@@ -424,6 +429,7 @@ function seeOnSquare(g, sq) {
 function goToPly(p) {
   const target = Math.max(0, Math.min(history.length, p));
   if (target === viewPly) return;
+  previewing = false; // navigation supersedes any hovered preview
   viewPly = target;
   renderBoardForView();
   if (atLiveHuman()) startLiveAnalysis();
@@ -479,20 +485,21 @@ function renderLines(lines, loading = false) {
     ol.innerHTML = '<li class="muted">—</li>';
     return;
   }
+  // Remember these lines (and the position they were computed at) so hovering
+  // a move in the panel can preview that variation on the board.
+  currentLines = lines;
+  analyzedFen = game.fen();
   ol.innerHTML = '';
-  for (const line of lines) {
+  lines.forEach((line, idx) => {
     const li = document.createElement('li');
     const ev = document.createElement('span');
     ev.className = 'ev';
     const whiteCp = game.turn() === 'w' ? rawScore(line) : flip(rawScore(line));
     ev.textContent = formatScore(line, game.turn());
     ev.classList.add(whiteCp.adv > 0 ? 'pos' : whiteCp.adv < 0 ? 'neg' : 'eq');
-    const pv = document.createElement('span');
-    pv.className = 'pv';
-    pv.textContent = pvToSan(game.fen(), line.pv).join(' ');
-    li.append(ev, pv);
+    li.append(ev, buildPv(analyzedFen, line.pv, idx));
     ol.appendChild(li);
-  }
+  });
   // eval bar follows the top line (White perspective)
   if (lines[0]) setEvalBar(toWhiteCp(lines[0], game.turn()));
 }
@@ -601,6 +608,69 @@ function pvToSan(fen, pv) {
   return out;
 }
 
+// Build the principal-variation span as individually hoverable moves, with
+// move numbers. Each move carries its line index and depth so hovering can
+// replay the variation up to that point on the board (see previewLine).
+function buildPv(fen, pv, lineIdx) {
+  const span = document.createElement('span');
+  span.className = 'pv';
+  const sans = pvToSan(fen, pv);
+  let num = +fen.split(' ')[5] || 1;   // fullmove number
+  let white = fen.split(' ')[1] === 'w';
+  sans.forEach((san, i) => {
+    if (i > 0) span.appendChild(document.createTextNode(' '));
+    if (white || i === 0) {
+      const n = document.createElement('span');
+      n.className = 'pvnum';
+      n.textContent = white ? num + '.' : num + '…';
+      span.appendChild(n);
+    }
+    const m = document.createElement('span');
+    m.className = 'pvm';
+    m.dataset.line = lineIdx;
+    m.dataset.depth = i + 1; // number of plies to replay for this move
+    m.textContent = san;
+    span.appendChild(m);
+    if (!white) num++;
+    white = !white;
+  });
+  return span;
+}
+
+// Preview the first `depth` moves of best line `lineIdx` on the board, without
+// altering the real game. The final move is highlighted as the "last move".
+function previewLine(lineIdx, depth) {
+  const pv = currentLines[lineIdx]?.pv;
+  if (!pv) return;
+  const g = new Chess(analyzedFen);
+  let last = null;
+  for (let i = 0; i < depth && i < pv.length; i++) {
+    const u = pv[i];
+    const mv = g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u.slice(4) || undefined });
+    if (!mv) break;
+    last = mv;
+  }
+  previewing = true;
+  board.setInteractive(false);
+  board.setThreats(state.showThreats ? hangingSquares(g) : []);
+  board.setLastMove(last ? { from: last.from, to: last.to } : null);
+  board.drawArrow(null);
+  board.render(g);
+  setTurnText(`Preview — ${g.turn() === 'w' ? 'White' : 'Black'} to move`);
+}
+
+// Drop the preview and restore whatever the board was actually showing.
+function endPreview() {
+  if (!previewing) return;
+  previewing = false;
+  renderBoardForView();
+  // Re-draw the live best-move arrow that renderBoardForView leaves to analysis.
+  if (atLiveHuman() && state.showBestMove && currentLines[0]?.pv?.[0]) {
+    const u = currentLines[0].pv[0];
+    board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
+  }
+}
+
 // ---------- Controls ----------
 $('mode-seg').addEventListener('click', (e) => {
   const btn = e.target.closest('button');
@@ -651,6 +721,13 @@ $('annotate-toggle').addEventListener('change', (e) => {
   if (state.annotateOn) scheduleReview(); // compute any missing ratings
 });
 $('sound-toggle').addEventListener('change', (e) => { sounds.setEnabled(e.target.checked); });
+
+// Best-line preview: hover a move to play that variation out on the board.
+$('lines').addEventListener('mouseover', (e) => {
+  const m = e.target.closest('.pvm');
+  if (m) previewLine(+m.dataset.line, +m.dataset.depth);
+});
+$('lines').addEventListener('mouseleave', endPreview);
 
 // Move navigation: click a move to jump there; arrow keys / Home / End to step.
 $('movelist').addEventListener('click', (e) => {
