@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:openings": "node scripts/build-openings.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

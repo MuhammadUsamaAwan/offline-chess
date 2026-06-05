@@ -181,9 +181,9 @@ function appendHistory(move) {
     annotation: null,
     fen: game.fen(),
   });
-  // Opening name: use the most specific match for this position, otherwise
+  // Opening: use the entry whose mainline ends at this position, otherwise
   // carry forward the previous move's opening so it persists out of book.
-  const matched = openings[fenKey(game.fen())];
+  const matched = openingAt(game.fen());
   history[ply].opening = matched || history[ply - 1]?.opening || null;
 }
 
@@ -408,6 +408,7 @@ function renderBoardForView() {
   if (atLive) updateTurnIndicator();
   else setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
   highlightActiveMove();
+  renderExplorer();
 }
 
 // Analyze a reviewed (past) position: refresh the "Best lines" panel and the
@@ -536,13 +537,112 @@ function playMoveSound(move) {
   return sounds.move();
 }
 
+// The opening entry ({ eco, name, pgn }) whose mainline ends at `fen`, or null.
+function openingAt(fen) {
+  const i = openings.byEpd[fenKey(fen)];
+  return i == null ? null : openings.entries[i];
+}
+
 function updateOpening() {
-  $('opening').textContent = history.at(-1)?.opening || 'Starting position';
+  const op = history.at(-1)?.opening;
+  const el = $('opening');
+  if (!op) {
+    el.innerHTML = '<span class="opening-name">Starting position</span>';
+  } else {
+    el.innerHTML = '';
+    const code = document.createElement('span');
+    code.className = 'eco-code';
+    code.textContent = op.eco;
+    const name = document.createElement('span');
+    name.className = 'opening-name';
+    name.textContent = op.name;
+    el.append(code, name);
+  }
 }
 
 // FEN reduced to the fields that define a position for opening lookup.
 function fenKey(fen) {
   return fen.split(' ').slice(0, 4).join(' ');
+}
+
+// Full FEN of the position currently on the board (live or while reviewing).
+function viewedFen() {
+  return viewPly === 0 ? START_FEN : history[viewPly - 1].fen;
+}
+
+// ---------- Opening explorer & search ----------
+// The explorer panel shows, for the viewed position, the legal moves that lead
+// into a named opening (transposition-aware via byEpd). Typing in the search
+// box replaces that list with matching openings that load onto the board.
+const explorerEl = $('explorer-list');
+const searchEl = $('opening-search');
+
+function renderExplorer() {
+  if (searchEl.value.trim()) return; // search results own the list while typing
+  const g = new Chess(viewedFen());
+  const num = Math.floor(viewPly / 2) + 1;
+  const prefix = g.turn() === 'w' ? `${num}.` : `${num}…`;
+  const seen = new Set();
+  const kids = [];
+  for (const m of g.moves({ verbose: true })) {
+    g.move(m);
+    const op = openingAt(g.fen());
+    g.undo();
+    if (op && !seen.has(m.san)) { seen.add(m.san); kids.push({ san: m.san, op }); }
+  }
+  if (!kids.length) {
+    explorerEl.innerHTML = '<li class="explorer-empty">No book moves from here.</li>';
+    return;
+  }
+  explorerEl.innerHTML = kids
+    .map(({ san, op }) =>
+      `<li class="explorer-item" data-san="${san}">` +
+        `<span class="ex-move">${prefix}${san}</span>` +
+        `<span class="ex-name"><span class="eco-code">${op.eco}</span>${escapeHtml(op.name)}</span>` +
+      `</li>`)
+    .join('');
+}
+
+function renderSearch(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) { renderExplorer(); return; }
+  const hits = [];
+  for (let i = 0; i < openings.entries.length && hits.length < 60; i++) {
+    const e = openings.entries[i];
+    if (e.name.toLowerCase().includes(q) || e.eco.toLowerCase().includes(q)) hits.push(i);
+  }
+  explorerEl.innerHTML = hits.length
+    ? hits.map((i) => {
+        const e = openings.entries[i];
+        return `<li class="explorer-item search-hit" data-entry="${i}">` +
+          `<span class="ex-name"><span class="eco-code">${e.eco}</span>${escapeHtml(e.name)}</span>` +
+        `</li>`;
+      }).join('')
+    : '<li class="explorer-empty">No matching openings.</li>';
+}
+
+// Play a book continuation from the viewed position, discarding any later moves.
+function playExplorerMove(san) {
+  if (state.thinking) return;
+  // Discard moves after the viewed ply, keeping chess.js's own history in sync
+  // (via undo) so PGN export stays correct — same approach as the undo button.
+  while (history.length > viewPly) { game.undo(); history.pop(); }
+  const prevFen = game.fen();
+  let move;
+  try { move = game.move(san); } catch { move = null; }
+  if (!move) return;
+  recordMove(move, prevFen);
+}
+
+function loadOpening(i) {
+  const entry = openings.entries[i];
+  if (!entry) return;
+  searchEl.value = '';
+  importGame(entry.pgn);
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 function updateTurnIndicator() {
@@ -822,6 +922,15 @@ $('movelist').addEventListener('click', (e) => {
   const mv = e.target.closest('.mv');
   if (mv) goToPly(+mv.dataset.ply + 1);
 });
+// Opening explorer / search: click a book move to play it, or a search hit to load it.
+$('explorer-list').addEventListener('click', (e) => {
+  const li = e.target.closest('.explorer-item');
+  if (!li) return;
+  if (li.dataset.san != null) playExplorerMove(li.dataset.san);
+  else if (li.dataset.entry != null) loadOpening(+li.dataset.entry);
+});
+$('opening-search').addEventListener('input', (e) => renderSearch(e.target.value));
+
 document.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
