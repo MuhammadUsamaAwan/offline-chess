@@ -205,7 +205,7 @@ function startLiveAnalysis() {
   analysisAbort = new AbortController();
   const fen = game.fen();
   const multipv = state.analysisOn ? 3 : 1; // only need 1 line for the arrow
-  if (state.analysisOn) renderLines([], true);
+  if (state.analysisOn) renderLines([], { loading: true });
 
   engine
     .analyze(fen, { depth: state.depth, multipv, signal: analysisAbort.signal }, (lines) => {
@@ -353,7 +353,7 @@ function renderBoardForView() {
   } else {
     board.setInteractive(false);
     board.setLastMove(viewPly > 0 ? lastMoveOf(viewPly - 1) : null);
-    drawReviewBestMove(g.fen());
+    analyzeReviewPosition(g.fen(), g.turn());
   }
   board.render(g);
   if (atLive) updateTurnIndicator();
@@ -361,23 +361,56 @@ function renderBoardForView() {
   highlightActiveMove();
 }
 
-// Best-move arrow for a reviewed (past) position. Uses the cached eval when
-// available, otherwise asks the engine; a token guards against rapid stepping
-// so a slow result never lands on a position the user has already left.
-let arrowToken = 0;
-function drawReviewBestMove(fen) {
-  arrowToken++;
-  if (!state.showBestMove) { board.drawArrow(null); return; }
-  const drawUci = (u) => u && board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
+// Analyze a reviewed (past) position: refresh the "Best lines" panel and the
+// best-move arrow for the position now on the board. A token guards against
+// rapid stepping so a slow engine result never lands on a position the user has
+// already left; the previous request is aborted so the queue stays responsive.
+let reviewAnalysisAbort = null;
+let reviewViewToken = 0;
+const linesCache = new Map(); // fen -> sorted engine lines (multipv 3), for review
+function analyzeReviewPosition(fen, turn) {
+  reviewViewToken++;
+  const token = reviewViewToken;
+  if (reviewAnalysisAbort) { reviewAnalysisAbort.abort(); reviewAnalysisAbort = null; }
 
+  const drawUci = (u) => {
+    if (token === reviewViewToken && state.showBestMove) {
+      board.drawArrow(u ? { from: u.slice(0, 2), to: u.slice(2, 4) } : null);
+    }
+  };
+  if (!state.showBestMove) board.drawArrow(null);
+  if (!state.analysisOn && !state.showBestMove) return; // nothing to show
+
+  // Already analyzed this position (e.g. stepping back to it, or ending a line
+  // preview): render straight from cache with no engine round-trip.
+  const cachedLines = linesCache.get(fen);
+  if (cachedLines) {
+    if (state.analysisOn) renderLines(cachedLines, { fen, turn });
+    drawUci(cachedLines[0]?.pv?.[0]);
+    return;
+  }
+  // Arrow only (panel hidden) and we already have this eval: draw it instantly.
   const cached = evalCache.get(fen);
-  if (cached?.bestmove) { drawUci(cached.bestmove); return; }
+  if (!state.analysisOn && cached?.bestmove) { drawUci(cached.bestmove); return; }
 
-  board.drawArrow(null); // clear any stale arrow while the engine works
-  const token = arrowToken;
-  evalPosition(fen)
-    .then((v) => {
-      if (token === arrowToken && state.showBestMove) drawUci(v.bestmove);
+  if (state.analysisOn) renderLines([], { loading: true, fen, turn });
+  if (state.showBestMove) board.drawArrow(null); // clear stale arrow while working
+
+  reviewAnalysisAbort = new AbortController();
+  engine
+    .analyze(
+      fen,
+      { depth: state.depth, multipv: state.analysisOn ? 3 : 1, signal: reviewAnalysisAbort.signal },
+      (lines) => {
+        if (token === reviewViewToken && state.analysisOn) renderLines(lines, { fen, turn });
+      }
+    )
+    .then((res) => {
+      if (res.aborted || token !== reviewViewToken) return;
+      if (res.lines[0]) evalCache.set(fen, { cp: cpFromInfo(res.lines[0]), bestmove: res.lines[0].pv?.[0] });
+      if (state.analysisOn && res.lines.length) linesCache.set(fen, res.lines);
+      if (state.analysisOn) renderLines(res.lines, { fen, turn });
+      drawUci(res.lines[0]?.pv?.[0]);
     })
     .catch(() => {});
 }
@@ -469,7 +502,11 @@ function updateTurnIndicator() {
 }
 function setTurnText(t) { $('turn-indicator').textContent = t; }
 
-function renderLines(lines, loading = false) {
+// Render the "Best lines" panel for a given position. `fen`/`turn` default to
+// the live game but are passed explicitly while reviewing so the panel reflects
+// the position currently on the board, not the live one.
+function renderLines(lines, opts = {}) {
+  const { loading = false, fen = game.fen(), turn = game.turn() } = opts;
   const ol = $('lines');
   if (!state.analysisOn) {
     ol.innerHTML = '<li class="muted">Analysis hidden.</li>';
@@ -488,20 +525,20 @@ function renderLines(lines, loading = false) {
   // Remember these lines (and the position they were computed at) so hovering
   // a move in the panel can preview that variation on the board.
   currentLines = lines;
-  analyzedFen = game.fen();
+  analyzedFen = fen;
   ol.innerHTML = '';
   lines.forEach((line, idx) => {
     const li = document.createElement('li');
     const ev = document.createElement('span');
     ev.className = 'ev';
-    const whiteCp = game.turn() === 'w' ? rawScore(line) : flip(rawScore(line));
-    ev.textContent = formatScore(line, game.turn());
+    const whiteCp = turn === 'w' ? rawScore(line) : flip(rawScore(line));
+    ev.textContent = formatScore(line, turn);
     ev.classList.add(whiteCp.adv > 0 ? 'pos' : whiteCp.adv < 0 ? 'neg' : 'eq');
-    li.append(ev, buildPv(analyzedFen, line.pv, idx));
+    li.append(ev, buildPv(fen, line.pv, idx));
     ol.appendChild(li);
   });
   // eval bar follows the top line (White perspective)
-  if (lines[0]) setEvalBar(toWhiteCp(lines[0], game.turn()));
+  if (lines[0]) setEvalBar(toWhiteCp(lines[0], turn));
 }
 
 function renderMoveList() {
@@ -695,6 +732,7 @@ $('depth').addEventListener('input', (e) => {
 });
 $('depth').addEventListener('change', () => {
   evalCache.clear(); // cached evals were at the old depth
+  linesCache.clear();
   if (atLiveHuman()) startLiveAnalysis();
   scheduleReview();
 });
@@ -703,6 +741,7 @@ $('analysis-toggle').addEventListener('change', (e) => {
   state.analysisOn = e.target.checked;
   if (!state.analysisOn) renderLines([]); // hide lines + eval bar immediately
   if (atLiveHuman()) startLiveAnalysis();
+  else if (viewPly < history.length) renderBoardForView(); // refresh lines in review
 });
 $('bestmove-toggle').addEventListener('change', (e) => {
   state.showBestMove = e.target.checked;
