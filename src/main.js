@@ -162,6 +162,13 @@ function finishImport() {
 
 function handleHumanMove({ from, to, promotion }) {
   if (state.thinking) return;
+  // Playing from a reviewed (past) position deviates from the game: discard the
+  // moves that came after it and continue as a new line from here. chess.js's
+  // own history is rewound in step so PGN export stays correct.
+  if (history.length > viewPly) {
+    while (history.length > viewPly) { game.undo(); history.pop(); }
+    $('result-banner').classList.add('hidden'); // any earlier game-over no longer applies
+  }
   const prevFen = game.fen();
   const move = game.move({ from, to, promotion: promotion || 'q' });
   if (!move) return;
@@ -227,7 +234,7 @@ async function aiMove() {
   const fen = game.fen();
   try {
     const uci = await engine.bestMove(fen, { elo: state.elo });
-    if (game.fen() !== fen) return; // position changed (new game / undo)
+    if (game.fen() !== fen) return; // position changed (new game / deviation)
     const prevFen = fen;
     const move = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.slice(4) || undefined });
     state.thinking = false;
@@ -377,7 +384,7 @@ function showReviewSummary(acc, counts) {
 }
 
 // ---------- Rendering ----------
-// Called whenever the game itself changes (move / undo / new game): snap the
+// Called whenever the game itself changes (move / deviation / new game): snap the
 // view to the live position and redraw everything.
 function refreshAll() {
   viewPly = history.length;
@@ -400,13 +407,20 @@ function renderBoardForView() {
     board.setInteractive(!state.thinking);
     board.setLastMove(history.length ? lastMoveOf(history.length - 1) : null);
   } else {
-    board.setInteractive(false);
+    // Let the human play from here to deviate into a new line. The board only
+    // allows moving the side to move, so gate interactivity on whose turn it is.
+    const humanCanMove = state.mode === 'human' || g.turn() === state.humanSide;
+    board.setInteractive(humanCanMove && !state.thinking);
     board.setLastMove(viewPly > 0 ? lastMoveOf(viewPly - 1) : null);
     analyzeReviewPosition(g.fen(), g.turn());
   }
   board.render(g);
   if (atLive) updateTurnIndicator();
-  else setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
+  else {
+    const canPlay = state.mode === 'human' || g.turn() === state.humanSide;
+    const hint = canPlay ? 'play a move to branch, or → / End to resume' : '→ or End to resume';
+    setTurnText(`Reviewing ${viewPly}/${history.length} — ${hint}`);
+  }
   highlightActiveMove();
   renderExplorer();
   updateNavButtons();
@@ -636,7 +650,7 @@ function renderSearch(query) {
 function playExplorerMove(san) {
   if (state.thinking) return;
   // Discard moves after the viewed ply, keeping chess.js's own history in sync
-  // (via undo) so PGN export stays correct — same approach as the undo button.
+  // (via undo) so PGN export stays correct — same as deviating with a board move.
   while (history.length > viewPly) { game.undo(); history.pop(); }
   const prevFen = game.fen();
   let move;
@@ -1028,21 +1042,6 @@ $('copy-fen').addEventListener('click', async () => {
   await navigator.clipboard.writeText(game.fen());
   flash($('copy-fen'), 'Copied!');
 });
-$('undo').addEventListener('click', () => {
-  if (state.thinking) return;
-  // In AI mode, undo a full move pair so it's the human's turn again.
-  const steps = state.mode === 'ai' && history.length >= 2 && !isHumanTurn() ? 1 : (state.mode === 'ai' ? 2 : 1);
-  for (let i = 0; i < steps && history.length; i++) {
-    game.undo();
-    history.pop();
-  }
-  board.setLastMove(history.length ? { from: history.at(-1).from, to: history.at(-1).to } : null);
-  if (game.isGameOver() === false) $('result-banner').classList.add('hidden');
-  refreshAll();
-  if (isHumanTurn()) startLiveAnalysis(); else maybeEngineTurn();
-  scheduleReview();
-});
-
 function flash(el, text) {
   const old = el.textContent;
   el.textContent = text;

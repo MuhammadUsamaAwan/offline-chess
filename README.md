@@ -18,9 +18,10 @@ the first install. The engine is Stockfish 18 (lite NNUE) compiled to WebAssembl
 - **Threats / hanging pieces** — optional red highlight on any piece (either color)
   that can be profitably captured (static exchange evaluation).
 - **Move navigation** — click a move or use ←/→/Home/End to step through the game.
+  Play a move from any past position to branch off into a new line.
 - **Opening names** from the Lichess ECO database.
 - **Sound effects** for moves, captures, castling, check, promotion, and game end.
-- **Adjustable search depth**, board flip, undo, copy FEN, board coordinates.
+- **Adjustable search depth**, board flip, copy FEN, board coordinates.
 - Click-to-move or drag-and-drop, with legal-move dots, last-move and check
   highlighting, and pawn promotion prompts.
 
