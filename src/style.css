@@ -208,6 +208,17 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .explorer-item.search-hit .ex-name { text-align: left; justify-content: flex-start; color: var(--text); }
 .explorer-empty { padding: 6px; font-size: 13px; color: var(--muted); }
 
+/* Move navigation */
+.movenav { display: flex; align-items: center; gap: 4px; margin-bottom: 10px; }
+.navbtn {
+  flex: 1; padding: 6px 0; background: #3c4149; color: var(--text);
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+  font-size: 13px; line-height: 1;
+}
+.navbtn:hover:not(:disabled) { background: #464c55; }
+.navbtn:disabled { opacity: .35; cursor: default; }
+.movenav-hint { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
 /* Move list */
 .movelist { overflow-y: auto; max-height: 40vh; font-size: 14px; }
 .move-row { display: grid; grid-template-columns: 32px 1fr 1fr; gap: 6px; padding: 3px 4px; border-radius: 4px; }

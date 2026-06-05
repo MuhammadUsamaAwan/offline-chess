@@ -409,6 +409,17 @@ function renderBoardForView() {
   else setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
   highlightActiveMove();
   renderExplorer();
+  updateNavButtons();
+}
+
+// Reflect navigability: disable Back/First at the start, Forward/Last at live.
+function updateNavButtons() {
+  const atStart = viewPly === 0;
+  const atLive = viewPly >= history.length;
+  $('nav-first').disabled = atStart;
+  $('nav-prev').disabled = atStart;
+  $('nav-next').disabled = atLive;
+  $('nav-last').disabled = atLive;
 }
 
 // Analyze a reviewed (past) position: refresh the "Best lines" panel and the
@@ -939,6 +950,10 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') { e.preventDefault(); goToPly(0); }
   else if (e.key === 'End') { e.preventDefault(); goToPly(history.length); }
 });
+$('nav-first').addEventListener('click', () => goToPly(0));
+$('nav-prev').addEventListener('click', () => goToPly(viewPly - 1));
+$('nav-next').addEventListener('click', () => goToPly(viewPly + 1));
+$('nav-last').addEventListener('click', () => goToPly(history.length));
 
 $('accuracy-toggle').addEventListener('change', (e) => {
   state.showAccuracy = e.target.checked;
