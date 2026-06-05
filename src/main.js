@@ -59,6 +59,53 @@ function startGame() {
   maybeEngineTurn();
 }
 
+// Import a sequence of moves pasted as SAN/PGN text, e.g.
+// "1. d4 g6 2. Bf4 d6 3. Nf3 Bg7 4. c3". Strips move numbers, comments,
+// variations, NAGs and the result token, then replays the moves from the
+// start, rebuilding history. Returns an error message, or null on success.
+function loadMoves(text) {
+  const tokens = text
+    .replace(/\{[^}]*\}/g, ' ')                 // { comments }
+    .replace(/\([^)]*\)/g, ' ')                 // ( variations )
+    .replace(/\$\d+/g, ' ')                     // $ NAGs
+    .replace(/\b\d+\.(\.\.)?/g, ' ')            // move numbers: 1. or 1...
+    .replace(/\b(1-0|0-1|1\/2-1\/2|\*)\b/g, ' ')// result
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (!tokens.length) return 'No moves found.';
+
+  if (analysisAbort) analysisAbort.abort();
+  game.reset();
+  history.length = 0;
+  evalCache.clear();
+
+  for (let i = 0; i < tokens.length; i++) {
+    let move;
+    try { move = game.move(tokens[i]); } catch { move = null; }
+    if (!move) {
+      // Keep what loaded so far, but report where it broke.
+      finishImport();
+      return `Stopped at illegal move "${tokens[i]}" (loaded ${history.length}).`;
+    }
+    appendHistory(move);
+  }
+  finishImport();
+  return null;
+}
+
+// Snap UI to the imported position and resume the engine, mirroring startGame.
+function finishImport() {
+  board.setLastMove(history.length ? lastMoveOf(history.length - 1) : null);
+  board.drawArrow(null);
+  $('result-banner').classList.add('hidden');
+  $('review-summary').classList.add('hidden');
+  refreshAll();
+  if (game.isGameOver()) { showResult(); scheduleReview(); return; }
+  maybeEngineTurn();
+  scheduleReview();
+}
+
 function handleHumanMove({ from, to, promotion }) {
   if (state.thinking) return;
   const prevFen = game.fen();
@@ -67,7 +114,9 @@ function handleHumanMove({ from, to, promotion }) {
   recordMove(move, prevFen);
 }
 
-function recordMove(move, prevFen) {
+// Append one applied move to `history`, deriving its opening name. Shared by
+// live play (recordMove) and bulk import (loadMoves).
+function appendHistory(move) {
   const ply = history.length;
   history.push({
     san: move.san,
@@ -82,7 +131,10 @@ function recordMove(move, prevFen) {
   // carry forward the previous move's opening so it persists out of book.
   const matched = openings[fenKey(game.fen())];
   history[ply].opening = matched || history[ply - 1]?.opening || null;
+}
 
+function recordMove(move, prevFen) {
+  appendHistory(move);
   board.setLastMove(move);
   board.drawArrow(null);
   refreshAll();
@@ -296,12 +348,33 @@ function renderBoardForView() {
   } else {
     board.setInteractive(false);
     board.setLastMove(viewPly > 0 ? lastMoveOf(viewPly - 1) : null);
-    board.drawArrow(null);
+    drawReviewBestMove(g.fen());
   }
   board.render(g);
   if (atLive) updateTurnIndicator();
   else setTurnText(`Reviewing ${viewPly}/${history.length} — → or End to resume`);
   highlightActiveMove();
+}
+
+// Best-move arrow for a reviewed (past) position. Uses the cached eval when
+// available, otherwise asks the engine; a token guards against rapid stepping
+// so a slow result never lands on a position the user has already left.
+let arrowToken = 0;
+function drawReviewBestMove(fen) {
+  arrowToken++;
+  if (!state.showBestMove) { board.drawArrow(null); return; }
+  const drawUci = (u) => u && board.drawArrow({ from: u.slice(0, 2), to: u.slice(2, 4) });
+
+  const cached = evalCache.get(fen);
+  if (cached?.bestmove) { drawUci(cached.bestmove); return; }
+
+  board.drawArrow(null); // clear any stale arrow while the engine works
+  const token = arrowToken;
+  evalPosition(fen)
+    .then((v) => {
+      if (token === arrowToken && state.showBestMove) drawUci(v.bestmove);
+    })
+    .catch(() => {});
 }
 
 // ---------- Threats / hanging pieces ----------
@@ -565,6 +638,7 @@ $('bestmove-toggle').addEventListener('change', (e) => {
   state.showBestMove = e.target.checked;
   if (!state.showBestMove) board.drawArrow(null);
   if (atLiveHuman()) startLiveAnalysis();
+  else if (viewPly < history.length) renderBoardForView(); // redraw arrow in review
 });
 $('threats-toggle').addEventListener('change', (e) => {
   state.showThreats = e.target.checked;
@@ -596,6 +670,18 @@ $('accuracy-toggle').addEventListener('change', (e) => {
   state.showAccuracy = e.target.checked;
   if (state.showAccuracy) updateReview();
   else $('review-summary').classList.add('hidden');
+});
+
+$('load-moves').addEventListener('click', () => {
+  const err = loadMoves($('moves-input').value);
+  const box = $('paste-error');
+  if (err) {
+    box.textContent = err;
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+    $('moves-input').value = '';
+  }
 });
 
 $('new-game').addEventListener('click', startGame);

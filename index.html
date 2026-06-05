@@ -47,6 +47,12 @@
             <button id="flip" class="btn">Flip board</button>
             <button id="copy-fen" class="btn">Copy FEN</button>
           </div>
+          <details class="paste">
+            <summary>Paste moves</summary>
+            <textarea id="moves-input" rows="3" placeholder="1. d4 g6 2. Bf4 d6 3. Nf3 Bg7 4. c3"></textarea>
+            <div id="paste-error" class="paste-error hidden"></div>
+            <button id="load-moves" class="btn primary">Load moves</button>
+          </details>
           <label class="toggle">
             <input type="checkbox" id="sound-toggle" checked />
             <span>Sound effects</span>
