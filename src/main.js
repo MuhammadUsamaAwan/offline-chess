@@ -415,6 +415,7 @@ function renderBoardForView() {
     analyzeReviewPosition(g.fen(), g.turn());
   }
   board.render(g);
+  updateCaptured(g);
   if (atLive) updateTurnIndicator();
   else {
     const canPlay = state.mode === 'human' || g.turn() === state.humanSide;
@@ -488,6 +489,57 @@ function analyzeReviewPosition(fen, turn) {
       drawUci(res.lines[0]?.pv?.[0]);
     })
     .catch(() => {});
+}
+
+// ---------- Captured pieces / material ----------
+// Counts the pieces each side has lost (relative to the starting array) and the
+// net material difference, then renders a tray of captured pieces above and
+// below the board with a "+N" badge on whichever side is ahead. Promotions can
+// make a missing-count clamp to zero, but the material badge stays accurate
+// because it sums the values actually on the board.
+const START_COUNT = { q: 1, r: 2, b: 2, n: 2, p: 8 };
+const PIECE_VAL = { q: 9, r: 5, b: 3, n: 3, p: 1 };
+const CAP_ORDER = ['q', 'r', 'b', 'n', 'p']; // most to least valuable
+const CAP_GLYPHS = {
+  w: { q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
+  b: { q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' },
+};
+
+function updateCaptured(g) {
+  const onBoard = { w: {}, b: {} };
+  for (const c of ['w', 'b']) for (const t of CAP_ORDER) onBoard[c][t] = 0;
+  let diff = 0; // material from White's perspective (+ = White ahead)
+  for (const row of g.board()) {
+    for (const sq of row) {
+      if (!sq || sq.type === 'k') continue;
+      onBoard[sq.color][sq.type]++;
+      diff += (sq.color === 'w' ? 1 : -1) * PIECE_VAL[sq.type];
+    }
+  }
+  const missing = { w: {}, b: {} };
+  for (const c of ['w', 'b']) for (const t of CAP_ORDER) {
+    missing[c][t] = Math.max(0, START_COUNT[t] - onBoard[c][t]);
+  }
+
+  // A player's tray shows the opponent pieces they have captured, plus a "+N"
+  // badge when that player is ahead on material.
+  const trayHtml = (playerColor) => {
+    const lost = playerColor === 'w' ? 'b' : 'w'; // opponent's missing pieces
+    let html = '';
+    for (const t of CAP_ORDER) {
+      for (let i = 0; i < missing[lost][t]; i++) {
+        html += `<span class="cap-pc cap-${lost}">${CAP_GLYPHS[lost][t]}</span>`;
+      }
+    }
+    const adv = playerColor === 'w' ? diff : -diff;
+    if (adv > 0) html += `<span class="cap-adv">+${adv}</span>`;
+    return html;
+  };
+
+  const bottom = board.orientation;            // color shown at the bottom
+  const top = bottom === 'w' ? 'b' : 'w';
+  $('captured-top').innerHTML = trayHtml(top);
+  $('captured-bottom').innerHTML = trayHtml(bottom);
 }
 
 // ---------- Threats / hanging pieces ----------
@@ -867,6 +919,7 @@ function previewLine(lineIdx, depth) {
   board.setLastMove(last ? { from: last.from, to: last.to } : null);
   board.drawArrow(null);
   board.render(g);
+  updateCaptured(g);
   setTurnText(`Preview — ${g.turn() === 'w' ? 'White' : 'Black'} to move`);
 }
 
@@ -1037,7 +1090,10 @@ window.addEventListener('drop', async (e) => {
 });
 
 $('new-game').addEventListener('click', startGame);
-$('flip').addEventListener('click', () => board.flip());
+$('flip').addEventListener('click', () => {
+  board.flip();
+  if (board.game) updateCaptured(board.game); // re-render trays for the new side
+});
 $('copy-fen').addEventListener('click', async () => {
   await navigator.clipboard.writeText(game.fen());
   flash($('copy-fen'), 'Copied!');
