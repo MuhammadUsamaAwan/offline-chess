@@ -1017,6 +1017,14 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Home') { e.preventDefault(); goToPly(0); }
   else if (e.key === 'End') { e.preventDefault(); goToPly(history.length); }
 });
+
+document.addEventListener('wheel', (e) => {
+  // Let scrollable panels (move list, opening explorer) scroll normally.
+  if (e.target.closest('.movelist, .explorer-list')) return;
+  e.preventDefault();
+  if (e.deltaY > 0) goToPly(viewPly + 1);
+  else if (e.deltaY < 0) goToPly(viewPly - 1);
+}, { passive: false });
 $('nav-first').addEventListener('click', () => goToPly(0));
 $('nav-prev').addEventListener('click', () => goToPly(viewPly - 1));
 $('nav-next').addEventListener('click', () => goToPly(viewPly + 1));
