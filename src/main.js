@@ -53,6 +53,7 @@ engine.whenReady().then(() => {
 
 // ---------- Game flow ----------
 function startGame() {
+  engine.newGame(); // reset engine hash/history for a genuinely new game
   game.reset();
   history.length = 0;
   board.setLastMove(null);
@@ -90,6 +91,7 @@ function importGame(text) {
   if (!moves.length) return 'PGN contained no moves.';
 
   if (analysisAbort) analysisAbort.abort();
+  engine.newGame();
   game.reset();
   history.length = 0;
   evalCache.clear();
@@ -131,6 +133,7 @@ function loadMoves(text) {
   if (!tokens.length) return 'No moves found.';
 
   if (analysisAbort) analysisAbort.abort();
+  engine.newGame();
   game.reset();
   history.length = 0;
   evalCache.clear();

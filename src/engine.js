@@ -40,6 +40,10 @@ export class Engine {
   async _init() {
     this._send('uci');
     await this._await((l) => l.startsWith('uciok'));
+    // A larger transposition table lets deeper searches reuse work on
+    // transposed positions instead of re-searching them; the payoff grows with
+    // depth. 128 MB is a good desktop default and stays modest on RAM.
+    this._setoption('Hash', 128);
     this._send('isready');
     await this._await((l) => l.startsWith('readyok'));
     this.ready = true;
@@ -47,6 +51,20 @@ export class Engine {
 
   whenReady() {
     return this._readyPromise;
+  }
+
+  // Signal a fresh game so the engine resets its hash/history. Searches don't
+  // need this per-call — `position fen` fully sets the position — and sending it
+  // before every job would wipe the transposition table each time, throwing away
+  // the work that makes deeper searches fast. So we send it only here, when the
+  // caller actually starts or loads a new game.
+  newGame() {
+    return this._run(async () => {
+      await this._readyPromise;
+      this._send('ucinewgame');
+      this._send('isready');
+      await this._await((l) => l.startsWith('readyok'));
+    });
   }
 
   // Run a job exclusively. `fn` receives a helper to send commands and to
@@ -71,7 +89,6 @@ export class Engine {
       await this._readyPromise;
       this._setoption('UCI_LimitStrength', 'false');
       this._setoption('MultiPV', multipv);
-      this._send('ucinewgame');
       this._send(`position fen ${fen}`);
 
       const lines = new Map(); // multipv index -> info
@@ -114,7 +131,6 @@ export class Engine {
       await this._readyPromise;
       this._setoption('MultiPV', 1);
       applyStrength(this, elo);
-      this._send('ucinewgame');
       this._send(`position fen ${fen}`);
 
       // Weaker levels: cap thinking time/nodes so play is faster *and* worse.
