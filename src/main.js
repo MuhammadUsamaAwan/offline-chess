@@ -14,6 +14,7 @@ const state = {
   mode: 'ai',        // 'ai' | 'human'
   elo: 1500,
   humanSide: 'w',    // which color the human plays in AI mode
+  pauseAi: false,    // AI mode: let the human move both sides to explore lines
   analysisOn: true,
   showBestMove: false,
   showThreats: false,
@@ -214,7 +215,7 @@ function recordMove(move, prevFen) {
 }
 
 function isHumanTurn() {
-  if (state.mode === 'human') return true;
+  if (state.mode === 'human' || state.pauseAi) return true;
   return game.turn() === state.humanSide;
 }
 
@@ -409,7 +410,7 @@ function renderBoardForView() {
   } else {
     // Let the human play from here to deviate into a new line. The board only
     // allows moving the side to move, so gate interactivity on whose turn it is.
-    const humanCanMove = state.mode === 'human' || g.turn() === state.humanSide;
+    const humanCanMove = state.mode === 'human' || state.pauseAi || g.turn() === state.humanSide;
     board.setInteractive(humanCanMove && !state.thinking);
     board.setLastMove(viewPly > 0 ? lastMoveOf(viewPly - 1) : null);
     analyzeReviewPosition(g.fen(), g.turn());
@@ -418,7 +419,7 @@ function renderBoardForView() {
   updateCaptured(g);
   if (atLive) updateTurnIndicator();
   else {
-    const canPlay = state.mode === 'human' || g.turn() === state.humanSide;
+    const canPlay = state.mode === 'human' || state.pauseAi || g.turn() === state.humanSide;
     const hint = canPlay ? 'play a move to branch, or → / End to resume' : '→ or End to resume';
     setTurnText(`Reviewing ${viewPly}/${history.length} — ${hint}`);
   }
@@ -952,6 +953,15 @@ $('elo').addEventListener('input', (e) => {
 $('ai-side').addEventListener('change', (e) => {
   state.humanSide = e.target.value;
   startGame();
+});
+// Pause the AI to explore lines by hand: the human can now move both sides and
+// the engine won't auto-reply. Unpausing hands the turn back, so if it's the
+// AI's move it plays immediately. Either way refresh interactivity / analysis.
+$('pause-ai-toggle').addEventListener('change', (e) => {
+  state.pauseAi = e.target.checked;
+  if (state.thinking) return; // engine mid-move; it'll settle and we re-render then
+  renderBoardForView();
+  if (viewPly >= history.length) maybeEngineTurn();
 });
 $('depth').addEventListener('input', (e) => {
   state.depth = +e.target.value;
