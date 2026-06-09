@@ -185,6 +185,8 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 
 /* Lines */
 .lines { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.card:has(> .lines) { min-height: 200px; }
+.card:has(> .opening) { min-height: 172px; }
 .lines li { display: flex; gap: 8px; font-size: 13px; align-items: baseline; }
 .lines .ev { font-weight: 700; min-width: 48px; font-variant-numeric: tabular-nums; }
 .lines .ev.pos { color: #7ec699; }
