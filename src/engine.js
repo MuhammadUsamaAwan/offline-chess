@@ -134,7 +134,7 @@ export class Engine {
       this._send(`position fen ${fen}`);
 
       // Weaker levels: cap thinking time/nodes so play is faster *and* worse.
-      const movetime = elo < 1000 ? 200 : elo < 1500 ? 400 : elo < 2200 ? 700 : 1000;
+      const movetime = elo < 1000 ? 200 : elo < 1500 ? 400 : elo < 2200 ? 700 : elo < 2850 ? 1000 : 1500;
       this._send(`go movetime ${movetime}`);
       const line = await this._await((l) => (l.startsWith('bestmove') ? l : false));
       return line.split(' ')[1];
@@ -146,17 +146,21 @@ export class Engine {
   }
 }
 
-// Map a target Elo to engine options. Stockfish's UCI_Elo floor is ~1320,
-// so below that we drop UCI_LimitStrength and use Skill Level instead.
+// Map a target Elo to engine options. Stockfish's UCI_Elo floor is ~1320 and
+// ceiling ~2850; outside that band we drop UCI_LimitStrength and steer with
+// Skill Level (low end) or let it run at full strength (high end).
 function applyStrength(engine, elo) {
-  if (elo >= 1320) {
+  if (elo > 2850) {
+    engine._setoption('UCI_LimitStrength', 'false');
+    engine._setoption('Skill Level', 20);
+  } else if (elo >= 1320) {
     engine._setoption('UCI_LimitStrength', 'true');
-    engine._setoption('UCI_Elo', Math.min(2850, Math.round(elo)));
+    engine._setoption('UCI_Elo', Math.round(elo));
     engine._setoption('Skill Level', 20);
   } else {
     engine._setoption('UCI_LimitStrength', 'false');
-    // 600..1320  ->  Skill Level 0..8
-    const skill = Math.max(0, Math.min(8, Math.round(((elo - 600) / (1320 - 600)) * 8)));
+    // 200..1320  ->  Skill Level 0..8
+    const skill = Math.max(0, Math.min(8, Math.round(((elo - 200) / (1320 - 200)) * 8)));
     engine._setoption('Skill Level', skill);
   }
 }
