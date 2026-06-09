@@ -44,9 +44,25 @@ npm run build      # outputs to dist/
 npm run preview    # serves the built app locally
 ```
 
-The `dist/` folder is self-contained. It must be served over **http** (browsers
-won't load the WebAssembly engine from a `file://` page), but any static server
-works offline — e.g. `npx serve dist` or `python -m http.server` inside `dist`.
+The `dist/` folder is self-contained and works offline, but it has two serving
+requirements:
+
+- **Served over `http(s)`**, not `file://` — browsers won't load the WebAssembly
+  engine from a `file://` page.
+- **Cross-origin isolation headers.** The engine is the multi-threaded Stockfish
+  build, which needs `SharedArrayBuffer`. Browsers only expose that to
+  cross-origin-isolated pages, so the host must send these two response headers
+  on every request:
+
+  ```
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  ```
+
+  `npm run preview` and the Vite dev server set them automatically, and the
+  included `vercel.json` sets them on Vercel. A plain static server (`npx serve
+  dist`, `python -m http.server`) does **not** send these headers, so the engine
+  will fail to start there with a `SharedArrayBuffer is not defined` error.
 
 ## How it works
 

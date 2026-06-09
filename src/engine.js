@@ -1,5 +1,6 @@
 // Thin wrapper around the Stockfish (WASM) Web Worker.
-// Single-threaded "lite" build => no SharedArrayBuffer / COOP-COEP headers needed.
+// Multi-threaded build => uses SharedArrayBuffer, so the page must be
+// cross-origin isolated (COOP/COEP headers). See README for host requirements.
 //
 // The engine runs one job at a time. Both "find best move for the AI" and
 // "analyze this position" go through the same command pipeline; callers await
