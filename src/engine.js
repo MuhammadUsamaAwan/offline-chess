@@ -40,10 +40,16 @@ export class Engine {
   async _init() {
     this._send('uci');
     await this._await((l) => l.startsWith('uciok'));
+    // This is the multi-threaded WASM build: splitting the search across cores
+    // is the single biggest speedup at high depth. Leave one core for the UI/OS
+    // so the page stays responsive while the engine thinks.
+    const cores = navigator.hardwareConcurrency || 4;
+    this._setoption('Threads', Math.max(1, cores - 1));
     // A larger transposition table lets deeper searches reuse work on
     // transposed positions instead of re-searching them; the payoff grows with
-    // depth. 128 MB is a good desktop default and stays modest on RAM.
-    this._setoption('Hash', 128);
+    // depth. With threads pushing deeper, give it more room than the 128 MB
+    // single-threaded default.
+    this._setoption('Hash', 256);
     this._send('isready');
     await this._await((l) => l.startsWith('readyok'));
     this.ready = true;
