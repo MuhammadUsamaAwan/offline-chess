@@ -614,44 +614,48 @@ function checkableKingSquares(g) {
   return out;
 }
 
-// Squares of all absolutely-pinned pieces (both colors): for each king, walk the
-// 8 ray directions; a friendly piece sitting between the king and an enemy slider
-// aligned with that ray is pinned.
+// Squares of pinned pieces (absolute and relative): walk every enemy slider's
+// 8 rays; the first piece on the ray is the pin candidate, and if the next piece
+// behind it on the same ray is a more valuable friend (or the king), the
+// candidate is pinned — moving it loses the piece behind.
 function pinnedSquares(g) {
-  const out = [];
+  const out = new Set();
   const DIRS = [
     { df: 1, dr: 0, slider: 'r' }, { df: -1, dr: 0, slider: 'r' },
     { df: 0, dr: 1, slider: 'r' }, { df: 0, dr: -1, slider: 'r' },
     { df: 1, dr: 1, slider: 'b' }, { df: 1, dr: -1, slider: 'b' },
     { df: -1, dr: 1, slider: 'b' }, { df: -1, dr: -1, slider: 'b' },
   ];
-  for (const color of ['w', 'b']) {
-    const ksq = findKing(g, color);
-    if (!ksq) continue;
-    const kf = FILES.indexOf(ksq[0]);
-    const kr = +ksq[1];
-    for (const { df, dr, slider } of DIRS) {
-      let f = kf + df, r = kr + dr;
-      let candidate = null;
-      while (f >= 0 && f < 8 && r >= 1 && r <= 8) {
-        const sq = FILES[f] + r;
-        const p = g.get(sq);
-        if (p) {
-          if (!candidate) {
-            if (p.color !== color) break;
-            candidate = sq;
-          } else {
-            if (p.color !== color && (p.type === 'q' || p.type === slider)) {
-              out.push(candidate);
+  const b = g.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sl = b[r][f];
+      if (!sl) continue;
+      if (sl.type !== 'q' && sl.type !== 'r' && sl.type !== 'b') continue;
+      const victim = sl.color === 'w' ? 'b' : 'w';
+      for (const { df, dr, slider } of DIRS) {
+        if (sl.type !== 'q' && sl.type !== slider) continue;
+        let x = f + df, y = r - dr;
+        let candidate = null;
+        while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+          const p = b[y][x];
+          if (p) {
+            if (!candidate) {
+              if (p.color !== victim) break;
+              candidate = { sq: FILES[x] + (8 - y), val: SEE_VAL[p.type] };
+            } else {
+              if (p.color === victim && (p.type === 'k' || SEE_VAL[p.type] > candidate.val)) {
+                out.add(candidate.sq);
+              }
+              break;
             }
-            break;
           }
+          x += df; y -= dr;
         }
-        f += df; r += dr;
       }
     }
   }
-  return out;
+  return [...out];
 }
 
 function findKing(g, color) {
