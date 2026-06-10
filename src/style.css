@@ -153,6 +153,8 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .sq.check { background-image: radial-gradient(circle, rgba(229,115,115,.9), transparent 70%); }
 .sq.threat { outline: 3px solid rgba(231,76,60,.9); outline-offset: -3px; border-radius: 2px; }
 .sq.pinned { outline: 3px dashed rgba(186,104,200,.95); outline-offset: -3px; border-radius: 2px; }
+.sq.fork { outline: 3px solid rgba(255,193,7,.95); outline-offset: -3px; border-radius: 2px; }
+.sq.skewer { outline: 3px dotted rgba(0,188,212,.95); outline-offset: -3px; border-radius: 2px; }
 .sq.checkable::before {
   content: '⚠'; position: absolute; top: 1px; right: 2px;
   font-size: clamp(11px, calc(var(--board) / 32), 18px);

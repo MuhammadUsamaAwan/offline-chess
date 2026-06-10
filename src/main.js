@@ -20,6 +20,8 @@ const state = {
   showThreats: false,
   showCheckable: false,
   showPinned: false,
+  showForks: false,
+  showSkewers: false,
   annotateOn: true,
   showAccuracy: true,
   depth: 15,
@@ -411,6 +413,8 @@ function renderBoardForView() {
   board.setThreats(state.showThreats ? hangingSquares(g) : []);
   board.setPinned(state.showPinned ? pinnedSquares(g) : []);
   board.setCheckable(state.showCheckable ? checkableKingSquares(g) : []);
+  board.setForks(state.showForks ? forkSquares(g) : []);
+  board.setSkewers(state.showSkewers ? skewerSquares(g) : []);
   if (atLive) {
     board.setInteractive(!state.thinking);
     board.setLastMove(history.length ? lastMoveOf(history.length - 1) : null);
@@ -669,6 +673,83 @@ function chessWithTurn(g, turn) {
   parts[1] = turn;
   parts[3] = '-'; // clear en passant — it belonged to the other side's move
   try { return new Chess(parts.join(' ')); } catch { return null; }
+}
+
+// Squares of pieces currently delivering a fork: a single piece attacking two or
+// more enemy pieces where at least one target is the king or a piece more
+// valuable than the attacker (i.e. an unavoidable material/check gain).
+function forkSquares(g) {
+  const out = [];
+  const b = g.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const p = b[r][f];
+      if (!p) continue;
+      const sq = FILES[f] + (8 - r);
+      const enemy = p.color === 'w' ? 'b' : 'w';
+      const myVal = SEE_VAL[p.type];
+      let hits = 0, gainful = false;
+      for (let rr = 0; rr < 8; rr++) {
+        for (let ff = 0; ff < 8; ff++) {
+          const t = b[rr][ff];
+          if (!t || t.color !== enemy) continue;
+          const tsq = FILES[ff] + (8 - rr);
+          if (g.attackers(tsq, p.color).includes(sq)) {
+            hits++;
+            if (t.type === 'k' || SEE_VAL[t.type] > myVal) gainful = true;
+          }
+        }
+      }
+      if (hits >= 2 && gainful) out.push(sq);
+    }
+  }
+  return out;
+}
+
+// Squares involved in a skewer: an enemy slider attacks one of our pieces, and
+// directly behind it on the same ray sits another of our pieces of equal-or-
+// lesser value. Mark both pieces.
+function skewerSquares(g) {
+  const out = new Set();
+  const DIRS = [
+    { df: 1, dr: 0, slider: 'r' }, { df: -1, dr: 0, slider: 'r' },
+    { df: 0, dr: 1, slider: 'r' }, { df: 0, dr: -1, slider: 'r' },
+    { df: 1, dr: 1, slider: 'b' }, { df: 1, dr: -1, slider: 'b' },
+    { df: -1, dr: 1, slider: 'b' }, { df: -1, dr: -1, slider: 'b' },
+  ];
+  const b = g.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const sl = b[r][f];
+      if (!sl) continue;
+      const slType = sl.type;
+      if (slType !== 'q' && slType !== 'r' && slType !== 'b') continue;
+      const victim = sl.color === 'w' ? 'b' : 'w';
+      const sx = f, sy = r;
+      for (const { df, dr, slider } of DIRS) {
+        if (slType !== 'q' && slType !== slider) continue;
+        let x = sx + df, y = sy - dr; // dr in rank-up; board rows count down
+        let front = null;
+        while (x >= 0 && x < 8 && y >= 0 && y < 8) {
+          const p = b[y][x];
+          if (p) {
+            if (!front) {
+              if (p.color !== victim) break;
+              front = { sq: FILES[x] + (8 - y), val: SEE_VAL[p.type] };
+            } else {
+              if (p.color === victim && p.type !== 'k' && front.val > SEE_VAL[p.type]) {
+                out.add(front.sq);
+                out.add(FILES[x] + (8 - y));
+              }
+              break;
+            }
+          }
+          x += df; y -= dr;
+        }
+      }
+    }
+  }
+  return [...out];
 }
 
 // Step to a specific ply and, when resuming the live position, restart analysis.
@@ -1004,6 +1085,8 @@ function previewLine(lineIdx, depth) {
   board.setThreats(state.showThreats ? hangingSquares(g) : []);
   board.setPinned(state.showPinned ? pinnedSquares(g) : []);
   board.setCheckable(state.showCheckable ? checkableKingSquares(g) : []);
+  board.setForks(state.showForks ? forkSquares(g) : []);
+  board.setSkewers(state.showSkewers ? skewerSquares(g) : []);
   board.setLastMove(last ? { from: last.from, to: last.to } : null);
   board.drawArrow(null);
   board.render(g);
@@ -1083,6 +1166,14 @@ $('checkable-toggle').addEventListener('change', (e) => {
 });
 $('pinned-toggle').addEventListener('change', (e) => {
   state.showPinned = e.target.checked;
+  renderBoardForView();
+});
+$('fork-toggle').addEventListener('change', (e) => {
+  state.showForks = e.target.checked;
+  renderBoardForView();
+});
+$('skewer-toggle').addEventListener('change', (e) => {
+  state.showSkewers = e.target.checked;
   renderBoardForView();
 });
 $('annotate-toggle').addEventListener('change', (e) => {

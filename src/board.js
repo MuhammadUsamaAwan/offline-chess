@@ -21,12 +21,16 @@ export class Board {
     this.threats = []; // squares to mark as "can be profitably captured"
     this.pinned = [];
     this.checkable = [];
+    this.forks = [];
+    this.skewers = [];
     this._buildDom();
   }
 
   setThreats(squares) { this.threats = squares || []; }
   setPinned(squares) { this.pinned = squares || []; }
   setCheckable(squares) { this.checkable = squares || []; }
+  setForks(squares) { this.forks = squares || []; }
+  setSkewers(squares) { this.skewers = squares || []; }
 
   _buildDom() {
     this.el.innerHTML = '';
@@ -100,12 +104,14 @@ export class Board {
         } else {
           cell.ondragstart = null;
         }
-        cell.classList.remove('sel', 'last', 'target', 'capture', 'check', 'threat', 'pinned', 'checkable');
+        cell.classList.remove('sel', 'last', 'target', 'capture', 'check', 'threat', 'pinned', 'checkable', 'fork', 'skewer');
       }
     }
     for (const sq of this.threats) this.squares[sq]?.classList.add('threat');
     for (const sq of this.pinned) this.squares[sq]?.classList.add('pinned');
     for (const sq of this.checkable) this.squares[sq]?.classList.add('checkable');
+    for (const sq of this.forks) this.squares[sq]?.classList.add('fork');
+    for (const sq of this.skewers) this.squares[sq]?.classList.add('skewer');
     if (this.lastMove) {
       this.squares[this.lastMove.from]?.classList.add('last');
       this.squares[this.lastMove.to]?.classList.add('last');
