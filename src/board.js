@@ -37,7 +37,7 @@ export class Board {
       for (const file of fileOrder) {
         const sq = file + rank;
         const cell = document.createElement('div');
-        const dark = (FILES.indexOf(file) + rank) % 2 === 0;
+        const dark = (FILES.indexOf(file) + rank) % 2 !== 0;
         cell.className = `sq ${dark ? 'dark' : 'light'}`;
         cell.dataset.sq = sq;
         cell.addEventListener('click', () => this._onClick(sq));
