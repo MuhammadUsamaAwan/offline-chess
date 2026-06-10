@@ -18,6 +18,8 @@ const state = {
   analysisOn: true,
   showBestMove: false,
   showThreats: false,
+  showCheckable: false,
+  showPinned: false,
   annotateOn: true,
   showAccuracy: true,
   depth: 15,
@@ -407,6 +409,8 @@ function renderBoardForView() {
   const atLive = viewPly >= history.length;
   const g = atLive ? game : new Chess(viewPly === 0 ? START_FEN : history[viewPly - 1].fen);
   board.setThreats(state.showThreats ? hangingSquares(g) : []);
+  board.setPinned(state.showPinned ? pinnedSquares(g) : []);
+  board.setCheckable(state.showCheckable ? checkableKingSquares(g) : []);
   if (atLive) {
     board.setInteractive(!state.thinking);
     board.setLastMove(history.length ? lastMoveOf(history.length - 1) : null);
@@ -587,6 +591,84 @@ function seeOnSquare(g, sq) {
   for (let d = 1; d <= caps.length; d++) gain[d] = caps[d - 1] - gain[d - 1];
   for (let d = caps.length - 1; d >= 1; d--) gain[d - 1] = -Math.max(-gain[d - 1], gain[d]);
   return gain[0];
+}
+
+// Squares of kings that the opposing side could put in check with a single move.
+// Tries both colors regardless of whose turn it is by swapping the FEN side-to-move.
+function checkableKingSquares(g) {
+  const out = [];
+  for (const kingColor of ['w', 'b']) {
+    const enemy = kingColor === 'w' ? 'b' : 'w';
+    const probe = chessWithTurn(g, enemy);
+    if (!probe) continue;
+    const moves = probe.moves({ verbose: true });
+    if (moves.some((m) => m.san.includes('+') || m.san.includes('#'))) {
+      const ksq = findKing(probe, kingColor);
+      if (ksq) out.push(ksq);
+    }
+  }
+  return out;
+}
+
+// Squares of all absolutely-pinned pieces (both colors): for each king, walk the
+// 8 ray directions; a friendly piece sitting between the king and an enemy slider
+// aligned with that ray is pinned.
+function pinnedSquares(g) {
+  const out = [];
+  const DIRS = [
+    { df: 1, dr: 0, slider: 'r' }, { df: -1, dr: 0, slider: 'r' },
+    { df: 0, dr: 1, slider: 'r' }, { df: 0, dr: -1, slider: 'r' },
+    { df: 1, dr: 1, slider: 'b' }, { df: 1, dr: -1, slider: 'b' },
+    { df: -1, dr: 1, slider: 'b' }, { df: -1, dr: -1, slider: 'b' },
+  ];
+  for (const color of ['w', 'b']) {
+    const ksq = findKing(g, color);
+    if (!ksq) continue;
+    const kf = FILES.indexOf(ksq[0]);
+    const kr = +ksq[1];
+    for (const { df, dr, slider } of DIRS) {
+      let f = kf + df, r = kr + dr;
+      let candidate = null;
+      while (f >= 0 && f < 8 && r >= 1 && r <= 8) {
+        const sq = FILES[f] + r;
+        const p = g.get(sq);
+        if (p) {
+          if (!candidate) {
+            if (p.color !== color) break;
+            candidate = sq;
+          } else {
+            if (p.color !== color && (p.type === 'q' || p.type === slider)) {
+              out.push(candidate);
+            }
+            break;
+          }
+        }
+        f += df; r += dr;
+      }
+    }
+  }
+  return out;
+}
+
+function findKing(g, color) {
+  const b = g.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const p = b[r][f];
+      if (p && p.type === 'k' && p.color === color) return FILES[f] + (8 - r);
+    }
+  }
+  return null;
+}
+
+// Return a Chess at the same position but with side-to-move forced to `turn`.
+// If the resulting FEN is illegal (e.g. side-not-to-move already in check), bail.
+function chessWithTurn(g, turn) {
+  if (g.turn() === turn) return g;
+  const parts = g.fen().split(' ');
+  parts[1] = turn;
+  parts[3] = '-'; // clear en passant — it belonged to the other side's move
+  try { return new Chess(parts.join(' ')); } catch { return null; }
 }
 
 // Step to a specific ply and, when resuming the live position, restart analysis.
@@ -920,6 +1002,8 @@ function previewLine(lineIdx, depth) {
   previewing = true;
   board.setInteractive(false);
   board.setThreats(state.showThreats ? hangingSquares(g) : []);
+  board.setPinned(state.showPinned ? pinnedSquares(g) : []);
+  board.setCheckable(state.showCheckable ? checkableKingSquares(g) : []);
   board.setLastMove(last ? { from: last.from, to: last.to } : null);
   board.drawArrow(null);
   board.render(g);
@@ -991,6 +1075,14 @@ $('bestmove-toggle').addEventListener('change', (e) => {
 });
 $('threats-toggle').addEventListener('change', (e) => {
   state.showThreats = e.target.checked;
+  renderBoardForView();
+});
+$('checkable-toggle').addEventListener('change', (e) => {
+  state.showCheckable = e.target.checked;
+  renderBoardForView();
+});
+$('pinned-toggle').addEventListener('change', (e) => {
+  state.showPinned = e.target.checked;
   renderBoardForView();
 });
 $('annotate-toggle').addEventListener('change', (e) => {

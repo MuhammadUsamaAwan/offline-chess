@@ -152,6 +152,14 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .sq.last { background-image: linear-gradient(rgba(205,210,106,.55), rgba(205,210,106,.55)); }
 .sq.check { background-image: radial-gradient(circle, rgba(229,115,115,.9), transparent 70%); }
 .sq.threat { outline: 3px solid rgba(231,76,60,.9); outline-offset: -3px; border-radius: 2px; }
+.sq.pinned { outline: 3px dashed rgba(186,104,200,.95); outline-offset: -3px; border-radius: 2px; }
+.sq.checkable::before {
+  content: '⚠'; position: absolute; top: 1px; right: 2px;
+  font-size: clamp(11px, calc(var(--board) / 32), 18px);
+  line-height: 1; color: #ffb300;
+  text-shadow: 0 1px 2px rgba(0,0,0,.7);
+  pointer-events: none;
+}
 .sq.target::after {
   content: ''; position: absolute; width: 30%; height: 30%;
   background: rgba(0,0,0,.28); border-radius: 50%;
