@@ -153,22 +153,16 @@ export class Engine {
   }
 }
 
-// Map a target Elo to engine options. Stockfish's UCI_Elo floor is ~1320 and
-// ceiling ~2850; outside that band we drop UCI_LimitStrength and steer with
-// Skill Level (low end) or let it run at full strength (high end).
+// Map a target Elo to engine options. Stockfish's UCI_Elo range is 1320..3190;
+// above 2850 the published Elo curve flattens, so we let it run unconstrained.
 function applyStrength(engine, elo) {
   if (elo > 2850) {
     engine._setoption('UCI_LimitStrength', 'false');
     engine._setoption('Skill Level', 20);
-  } else if (elo >= 1320) {
+  } else {
     engine._setoption('UCI_LimitStrength', 'true');
     engine._setoption('UCI_Elo', Math.round(elo));
     engine._setoption('Skill Level', 20);
-  } else {
-    engine._setoption('UCI_LimitStrength', 'false');
-    // 200..1320  ->  Skill Level 0..8
-    const skill = Math.max(0, Math.min(8, Math.round(((elo - 200) / (1320 - 200)) * 8)));
-    engine._setoption('Skill Level', skill);
   }
 }
 
