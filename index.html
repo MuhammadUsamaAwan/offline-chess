@@ -12,12 +12,17 @@
   <div id="app">
     <header class="topbar">
       <h1>♞ Chess Analyzer <span class="badge">offline</span></h1>
-      <div id="engine-status" class="engine-status" title="Engine status">engine: loading…</div>
+      <div class="topbar-right">
+        <div id="engine-status" class="engine-status" title="Engine status">engine: loading…</div>
+        <button id="open-controls" class="icon-btn mobile-only" aria-label="Open controls">⚙</button>
+        <button id="open-info" class="icon-btn mobile-only" aria-label="Open moves">📋</button>
+      </div>
     </header>
 
     <main class="layout">
       <!-- Left: controls -->
-      <aside class="panel controls">
+      <aside class="panel controls" id="panel-controls">
+        <div class="sheet-header"><span>Settings</span><button class="sheet-close" data-close-sheet="controls" aria-label="Close">✕</button></div>
         <section class="card">
           <h2>Game mode</h2>
           <div class="seg" id="mode-seg">
@@ -127,8 +132,16 @@
       </section>
 
       <!-- Right: analysis + moves -->
-      <aside class="panel info">
-        <section class="card">
+      <aside class="panel info" id="panel-info" data-tab="moves">
+        <div class="sheet-header">
+          <div class="tabbar mobile-only">
+            <button class="tabbtn" data-tab-target="moves">Moves</button>
+            <button class="tabbtn" data-tab-target="lines">Lines</button>
+            <button class="tabbtn" data-tab-target="opening">Opening</button>
+          </div>
+          <button class="sheet-close" data-close-sheet="info" aria-label="Close">✕</button>
+        </div>
+        <section class="card" data-tab-pane="opening">
           <h2>Opening</h2>
           <div id="opening" class="opening"><span class="opening-name">Starting position</span></div>
           <div class="explorer">
@@ -136,11 +149,11 @@
             <ul id="explorer-list" class="explorer-list"></ul>
           </div>
         </section>
-        <section class="card">
+        <section class="card" data-tab-pane="lines">
           <h2>Best lines</h2>
           <ol id="lines" class="lines"><li class="muted">Analysis hidden / off.</li></ol>
         </section>
-        <section class="card grow">
+        <section class="card grow" data-tab-pane="moves">
           <h2>Moves</h2>
           <div class="movenav">
             <button id="nav-first" class="navbtn" title="First move (Home)" aria-label="First move">⏮</button>
@@ -155,6 +168,7 @@
         <div id="result-banner" class="result-banner hidden"></div>
       </aside>
     </main>
+    <div id="sheet-backdrop" class="sheet-backdrop"></div>
     <div id="drop-overlay" class="drop-overlay hidden"><span>Drop a .pgn file to import</span></div>
   </div>
   <script type="module" src="/src/main.js"></script>

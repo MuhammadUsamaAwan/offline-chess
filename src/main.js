@@ -771,7 +771,11 @@ function highlightActiveMove() {
   box.querySelectorAll('.mv.active').forEach((el) => el.classList.remove('active'));
   if (viewPly > 0) {
     const el = box.querySelector(`.mv[data-ply="${viewPly - 1}"]`);
-    if (el) { el.classList.add('active'); el.scrollIntoView({ block: 'nearest' }); }
+    if (el) {
+      el.classList.add('active');
+      const top = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2;
+      box.scrollTop = Math.max(0, top);
+    }
   }
 }
 
@@ -1212,11 +1216,49 @@ $('opening-search').addEventListener('input', (e) => renderSearch(e.target.value
 document.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === 'Escape') {
+    if (closeAllSheets()) { e.preventDefault(); return; }
+  }
   if (e.key === 'ArrowLeft') { e.preventDefault(); goToPly(viewPly - 1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); goToPly(viewPly + 1); }
   else if (e.key === 'Home') { e.preventDefault(); goToPly(0); }
   else if (e.key === 'End') { e.preventDefault(); goToPly(history.length); }
 });
+
+function openSheet(which) {
+  closeAllSheets();
+  const id = which === 'controls' ? 'panel-controls' : 'panel-info';
+  document.getElementById(id)?.classList.add('open');
+  document.getElementById('sheet-backdrop')?.classList.add('open');
+}
+function closeAllSheets() {
+  const a = document.getElementById('panel-controls');
+  const b = document.getElementById('panel-info');
+  const bd = document.getElementById('sheet-backdrop');
+  const wasOpen = a?.classList.contains('open') || b?.classList.contains('open');
+  a?.classList.remove('open');
+  b?.classList.remove('open');
+  bd?.classList.remove('open');
+  return wasOpen;
+}
+function setInfoTab(tab) {
+  const panel = document.getElementById('panel-info');
+  if (!panel) return;
+  panel.dataset.tab = tab;
+  panel.querySelectorAll('.tabbtn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.tabTarget === tab);
+  });
+}
+document.getElementById('open-controls')?.addEventListener('click', () => openSheet('controls'));
+document.getElementById('open-info')?.addEventListener('click', () => openSheet('info'));
+document.getElementById('sheet-backdrop')?.addEventListener('click', closeAllSheets);
+document.querySelectorAll('[data-close-sheet]').forEach((el) => {
+  el.addEventListener('click', closeAllSheets);
+});
+document.querySelectorAll('.tabbtn').forEach((b) => {
+  b.addEventListener('click', () => setInfoTab(b.dataset.tabTarget));
+});
+setInfoTab('moves');
 
 $('nav-first').addEventListener('click', () => goToPly(0));
 $('nav-prev').addEventListener('click', () => goToPly(viewPly - 1));
