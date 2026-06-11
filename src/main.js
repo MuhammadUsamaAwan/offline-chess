@@ -1001,7 +1001,7 @@ function setEvalBar(white) {
     pct = p * 100;
     label = (cp >= 0 ? '+' : '') + (cp / 100).toFixed(1);
   }
-  fill.style.height = pct + '%';
+  fill.style.setProperty('--eval-pct', pct + '%');
   num.textContent = label;
 }
 function updateEvalBarFromTurn() {

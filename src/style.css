@@ -122,7 +122,7 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
   background: #111316; border-radius: 5px; position: relative; overflow: hidden;
   display: flex; align-items: flex-end;
 }
-.eval-fill { width: 100%; background: #f5f5f5; height: 50%; transition: height .25s ease; }
+.eval-fill { width: 100%; background: #f5f5f5; height: var(--eval-pct, 50%); transition: height .25s ease, width .25s ease; }
 .eval-num {
   position: absolute; bottom: 4px; left: 0; right: 0; text-align: center;
   font-size: 10px; font-weight: 700; color: #111; mix-blend-mode: difference; color: #fff;
@@ -297,7 +297,7 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
 .sheet-backdrop.open { opacity: 1; pointer-events: auto; }
 
 @media (max-width: 1080px) {
-  :root { --board: min(calc(100vw - 40px), calc(100dvh - 200px)); }
+  :root { --board: min(calc(100vw - 16px), calc(100dvh - 220px)); }
   html, body { height: 100dvh; overflow: hidden; }
   body { display: flex; flex-direction: column; }
   #app { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -314,10 +314,20 @@ select { width: 100%; padding: 6px; background: var(--bg); color: var(--text); b
   .board-wrap { order: -1; }
   .captured {
     font-size: 16px; min-height: 18px;
-    width: var(--board); padding-left: 28px;
+    width: var(--board); padding-left: 0;
   }
-  .eval-bar { width: 16px; }
-  .board-row { gap: 8px; }
+  .board-row { flex-direction: column-reverse; align-items: stretch; gap: 6px; }
+  .eval-bar {
+    width: var(--board); height: 14px;
+    align-items: stretch; flex-direction: row;
+  }
+  .eval-fill {
+    height: 100%; width: var(--eval-pct, 50%);
+  }
+  .eval-num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    bottom: auto; left: auto; right: auto; font-size: 10px;
+  }
   .turn-indicator { position: static; transform: none; margin-top: 4px; }
 
   .panel.controls, .panel.info {
