@@ -10,6 +10,13 @@ const game = new Chess();
 const engine = new Engine('./engine/stockfish.js');
 const sounds = new Sounds();
 
+// Stockfish's multi-threaded WASM build reserves a large SharedArrayBuffer at
+// boot. On reload, the previous Worker (and its SAB) can still be alive when
+// the fresh page tries to allocate its own, blowing past the renderer memory
+// cap and crashing the tab. Tearing the Worker down on unload releases the
+// SAB before the next page asks for one.
+window.addEventListener('pagehide', () => engine.destroy());
+
 const state = {
   mode: 'ai',        // 'ai' | 'human'
   elo: 1500,
