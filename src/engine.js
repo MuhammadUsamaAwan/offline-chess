@@ -1,6 +1,4 @@
 // Thin wrapper around the Stockfish (WASM) Web Worker.
-// Multi-threaded build => uses SharedArrayBuffer, so the page must be
-// cross-origin isolated (COOP/COEP headers). See README for host requirements.
 //
 // The engine runs one job at a time. Both "find best move for the AI" and
 // "analyze this position" go through the same command pipeline; callers await
@@ -41,16 +39,10 @@ export class Engine {
   async _init() {
     this._send('uci');
     await this._await((l) => l.startsWith('uciok'));
-    // This is the multi-threaded WASM build: splitting the search across cores
-    // is the single biggest speedup at high depth. Leave one core for the UI/OS
-    // so the page stays responsive while the engine thinks.
-    const cores = navigator.hardwareConcurrency || 4;
-    this._setoption('Threads', Math.max(1, cores - 1));
     // A larger transposition table lets deeper searches reuse work on
     // transposed positions instead of re-searching them; the payoff grows with
-    // depth. With threads pushing deeper, give it more room than the 128 MB
-    // single-threaded default.
-    this._setoption('Hash', 256);
+    // depth. 128 MB is a good desktop default and stays modest on RAM.
+    this._setoption('Hash', 128);
     this._send('isready');
     await this._await((l) => l.startsWith('readyok'));
     this.ready = true;
