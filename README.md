@@ -3,11 +3,13 @@
 A fully offline chess app: play against the Stockfish engine at adjustable Elo,
 play a friend on the same computer, and get live engine analysis with move
 quality ratings. Everything runs in your browser — **no internet needed** after
-the first install. The engine is Stockfish 18 (lite NNUE) compiled to WebAssembly.
+the first install. The engine is the multi-threaded Stockfish 18 (lite NNUE)
+build compiled to WebAssembly.
 
 ## Features
 
-- **Play vs AI** — strength slider from ~600 to 2850 Elo. Choose your color.
+- **Play vs AI** — strength slider from 1320 to 3190 Elo (Stockfish's real
+  `UCI_Elo` range). Choose your color.
 - **Play vs Human** — two players, same screen (pass-and-play).
 - **Live analysis** — top 3 engine lines with evaluations and an evaluation bar.
   Hover a line to preview that variation on the board.
@@ -16,8 +18,16 @@ the first install. The engine is Stockfish 18 (lite NNUE) compiled to WebAssembl
   Inaccuracy (?!) / Mistake (?) / Blunder (??) based on centipawn loss. Toggle on/off.
 - **Accuracy summary** — a per-side accuracy % plus a count of each move-quality
   grade, updated automatically as you play. Toggle on/off.
-- **Threats / hanging pieces** — optional red highlight on any piece (either color)
-  that can be profitably captured (static exchange evaluation).
+- **Pause AI** — stop the engine from replying so you can move both sides
+  to explore lines by hand.
+- **Tactical highlights** (each independently toggleable):
+  - Threats / hanging pieces — pieces that can be profitably captured (static
+    exchange evaluation).
+  - Checkable king — squares from which the side-to-move can give check.
+  - Pinned pieces — absolute and relative pins.
+  - Forks and skewers.
+- **Captured pieces** — trays above and below the board with a `+N` material
+  advantage badge.
 - **Move navigation** — click a move or use ←/→/Home/End to step through the game.
   Play a move from any past position to branch off into a new line.
 - **Opening explorer** — names every position from the Lichess ECO database
@@ -29,6 +39,9 @@ the first install. The engine is Stockfish 18 (lite NNUE) compiled to WebAssembl
 - **Adjustable search depth**, board flip, copy FEN, board coordinates.
 - Click-to-move or drag-and-drop, with legal-move dots, last-move and check
   highlighting, and pawn promotion prompts.
+- **Installable PWA** — built with `vite-plugin-pwa`. Install to your home screen
+  or desktop and the app (engine included) works fully offline via a service
+  worker that precaches every asset.
 
 ## Run it
 
@@ -68,7 +81,8 @@ requirements:
 
 - `chess.js` enforces the rules and tracks game state.
 - `src/engine.js` runs Stockfish in a Web Worker and speaks UCI. AI strength uses
-  `UCI_LimitStrength` / `UCI_Elo` (≥1320 Elo) and `Skill Level` below that.
+  `UCI_LimitStrength` / `UCI_Elo` across 1320–2850; above 2850 the published Elo
+  curve flattens, so the engine runs unconstrained at `Skill Level 20`.
 - Analysis uses `MultiPV 3`; move ratings compare the engine's best evaluation
   before the move against the evaluation after the move actually played. Each
   position is evaluated once and cached by FEN, so the ratings and accuracy
@@ -78,3 +92,7 @@ requirements:
   chess-openings TSVs (`data/eco/*.tsv`, CC0) via `npm run build:openings`.
 - The engine files live in `public/engine/` (copied from the `stockfish` npm
   package) so they are served as static assets and work offline.
+- `vite-plugin-pwa` generates the service worker and Web App Manifest at build
+  time. Workbox precaches every JS/CSS/HTML/WASM/SVG/PNG/JSON asset (cache size
+  bumped to 50 MB to fit the Stockfish NNUE), and `registerSW({ immediate: true })`
+  in `src/main.js` auto-updates clients when a new build ships.
