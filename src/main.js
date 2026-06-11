@@ -4,9 +4,6 @@ import { Board } from './board.js';
 import openings from './openings.json';
 import { Sounds } from './sounds.js';
 import './style.css';
-import { registerSW } from 'virtual:pwa-register';
-
-registerSW({ immediate: true });
 
 // ---------- State ----------
 const game = new Chess();
