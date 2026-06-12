@@ -1153,6 +1153,44 @@ function commitLine(lineIdx, depth) {
   scheduleReview();
 }
 
+// Preview a book move (one San from the viewed position) on the board.
+function previewExplorerSan(san) {
+  const g = new Chess(viewedFen());
+  let mv;
+  try { mv = g.move(san); } catch { mv = null; }
+  if (!mv) return;
+  previewPosition(g, { from: mv.from, to: mv.to });
+  renderOpening(openingAt(g.fen()) || history[viewPly - 1]?.opening || null);
+}
+
+// Preview an opening entry's final position on the board.
+function previewExplorerEntry(i) {
+  const entry = openings.entries[i];
+  if (!entry) return;
+  const g = new Chess();
+  let last = null;
+  try { g.loadPgn(entry.pgn); } catch { return; }
+  const hist = g.history({ verbose: true });
+  if (hist.length) last = hist[hist.length - 1];
+  previewPosition(g, last ? { from: last.from, to: last.to } : null);
+  renderOpening(entry);
+}
+
+function previewPosition(g, last) {
+  previewing = true;
+  board.setInteractive(false);
+  board.setThreats(state.showThreats ? hangingSquares(g) : []);
+  board.setPinned(state.showPinned ? pinnedSquares(g) : []);
+  board.setCheckable(state.showCheckable ? checkableKingSquares(g) : []);
+  board.setForks(state.showForks ? forkSquares(g) : []);
+  board.setSkewers(state.showSkewers ? skewerSquares(g) : []);
+  board.setLastMove(last);
+  board.drawArrow(null);
+  board.render(g);
+  updateCaptured(g);
+  setTurnText(`Preview — ${g.turn() === 'w' ? 'White' : 'Black'} to move`);
+}
+
 // Drop the preview and restore whatever the board was actually showing.
 function endPreview() {
   if (!previewing) return;
@@ -1269,6 +1307,14 @@ $('explorer-list').addEventListener('click', (e) => {
   else if (li.dataset.entry != null) loadOpening(+li.dataset.entry);
 });
 $('opening-search').addEventListener('input', (e) => renderSearch(e.target.value));
+// Explorer hover: preview a book move or opening entry's final position on the board.
+$('explorer-list').addEventListener('mouseover', (e) => {
+  const li = e.target.closest('.explorer-item');
+  if (!li) return;
+  if (li.dataset.san != null) previewExplorerSan(li.dataset.san);
+  else if (li.dataset.entry != null) previewExplorerEntry(+li.dataset.entry);
+});
+$('explorer-list').addEventListener('mouseleave', endPreview);
 
 document.addEventListener('keydown', (e) => {
   const tag = e.target.tagName;
