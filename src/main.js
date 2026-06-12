@@ -679,40 +679,58 @@ function chessWithTurn(g, turn) {
   try { return new Chess(parts.join(' ')); } catch { return null; }
 }
 
-// Squares of pieces currently delivering a fork: a single piece attacking two or
-// more enemy pieces where at least one target is the king or a piece more
-// valuable than the attacker (i.e. an unavoidable material/check gain).
+// Squares of pieces that have a fork available: a legal move whose destination
+// directly attacks two or more enemy pieces, with at least one target that
+// can't be defended without losing material — king (must respond to check),
+// undefended piece (free capture), or piece worth more than the forker
+// (exchange wins material). Probes both sides so the marker shows whichever
+// side has a fork ready to play. Skips moves where the forker simply hangs at
+// the destination (enemy captures forker, fork fails).
 function forkSquares(g) {
-  const out = [];
-  const b = g.board();
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const p = b[r][f];
-      if (!p) continue;
-      const sq = FILES[f] + (8 - r);
-      const enemy = p.color === 'w' ? 'b' : 'w';
-      const myVal = SEE_VAL[p.type];
-      let hits = 0, gainful = false;
-      for (let rr = 0; rr < 8; rr++) {
-        for (let ff = 0; ff < 8; ff++) {
-          const t = b[rr][ff];
+  const out = new Set();
+  for (const turn of ['w', 'b']) {
+    const probe = chessWithTurn(g, turn);
+    if (!probe) continue;
+    const enemy = turn === 'w' ? 'b' : 'w';
+    for (const m of probe.moves({ verbose: true })) {
+      const clone = new Chess(probe.fen());
+      clone.move(m);
+      const piece = clone.get(m.to);
+      if (!piece) continue;
+      const myVal = SEE_VAL[piece.type];
+      const b2 = clone.board();
+      let hits = 0, gainful = 0;
+      for (let r = 0; r < 8; r++) {
+        for (let f = 0; f < 8; f++) {
+          const t = b2[r][f];
           if (!t || t.color !== enemy) continue;
-          const tsq = FILES[ff] + (8 - rr);
-          if (g.attackers(tsq, p.color).includes(sq)) {
-            hits++;
-            if (t.type === 'k' || SEE_VAL[t.type] > myVal) gainful = true;
-          }
+          const tsq = FILES[f] + (8 - r);
+          if (!clone.attackers(tsq, turn).includes(m.to)) continue;
+          hits++;
+          if (t.type === 'k') { gainful++; continue; }
+          if (SEE_VAL[t.type] > myVal) { gainful++; continue; }
+          if (clone.attackers(tsq, enemy).length === 0) gainful++;
         }
       }
-      if (hits >= 2 && gainful) out.push(sq);
+      if (hits < 2 || gainful === 0) continue;
+      if (piece.type !== 'k' && seeOnSquare(clone, m.to) > 0) continue;
+      out.add(m.from);
     }
   }
-  return out;
+  return [...out];
 }
 
-// Squares involved in a skewer: an enemy slider attacks one of our pieces, and
-// directly behind it on the same ray sits another of our pieces of equal-or-
-// lesser value. Mark both pieces.
+// Squares of sliders (B/R/Q) that have a skewer available: a legal move whose
+// destination aligns the slider with two enemy pieces on the same ray, where
+// the front piece must move (king in check, or more valuable than the slider
+// so capture wins material) and the back piece is a non-king of equal or
+// lesser value than the front. Filters out false positives where back is still
+// safely defended after front vacates — either by another defender, or by the
+// front piece moving to a square that continues to defend back (e.g. queen
+// skewers king + rook on first rank, but king can step off the ray and still
+// guard the rook). When back can be safely defended, the skewer only counts if
+// the slider + back exchange itself still wins material. Probes both sides.
+// Skips moves where the slider simply hangs at the destination.
 function skewerSquares(g) {
   const out = new Set();
   const DIRS = [
@@ -721,36 +739,80 @@ function skewerSquares(g) {
     { df: 1, dr: 1, slider: 'b' }, { df: 1, dr: -1, slider: 'b' },
     { df: -1, dr: 1, slider: 'b' }, { df: -1, dr: -1, slider: 'b' },
   ];
-  const b = g.board();
-  for (let r = 0; r < 8; r++) {
-    for (let f = 0; f < 8; f++) {
-      const sl = b[r][f];
-      if (!sl) continue;
-      const slType = sl.type;
+  for (const turn of ['w', 'b']) {
+    const probe = chessWithTurn(g, turn);
+    if (!probe) continue;
+    const enemy = turn === 'w' ? 'b' : 'w';
+    for (const m of probe.moves({ verbose: true })) {
+      const mover = probe.get(m.from);
+      if (!mover) continue;
+      const promoted = m.promotion;
+      const slType = promoted || mover.type;
       if (slType !== 'q' && slType !== 'r' && slType !== 'b') continue;
-      const victim = sl.color === 'w' ? 'b' : 'w';
-      const sx = f, sy = r;
+      const clone = new Chess(probe.fen());
+      clone.move(m);
+      const moved = clone.get(m.to);
+      if (!moved) continue;
+      const myVal = SEE_VAL[moved.type];
+      const fx = m.to.charCodeAt(0) - 97;
+      const fy = 8 - parseInt(m.to.slice(1), 10);
+      const b2 = clone.board();
+      let found = false;
       for (const { df, dr, slider } of DIRS) {
-        if (slType !== 'q' && slType !== slider) continue;
-        let x = sx + df, y = sy - dr; // dr in rank-up; board rows count down
-        let front = null;
+        if (moved.type !== 'q' && moved.type !== slider) continue;
+        let x = fx + df, y = fy - dr;
+        let frontSq = null, frontVal = 0;
         while (x >= 0 && x < 8 && y >= 0 && y < 8) {
-          const p = b[y][x];
+          const p = b2[y][x];
           if (p) {
-            if (!front) {
-              if (p.color !== victim) break;
-              front = { sq: FILES[x] + (8 - y), val: SEE_VAL[p.type] };
+            if (!frontSq) {
+              if (p.color !== enemy) break;
+              frontVal = SEE_VAL[p.type];
+              if (p.type !== 'k' && frontVal <= myVal) break;
+              frontSq = FILES[x] + (8 - y);
             } else {
-              if (p.color === victim && p.type !== 'k' && front.val > SEE_VAL[p.type]) {
-                out.add(front.sq);
-                out.add(FILES[x] + (8 - y));
+              if (p.color !== enemy || p.type === 'k') break;
+              const backVal = SEE_VAL[p.type];
+              if (frontVal < backVal) break;
+              const backSq = FILES[x] + (8 - y);
+              // Can slider still profit if recaptured? (e.g., B captures R).
+              const netIfRecaptured = backVal - myVal;
+              // Defenders of back square *other than* the front piece. If any,
+              // back is defended even after front vacates — skewer only works
+              // when exchange itself is profitable.
+              const otherDefs = clone
+                .attackers(backSq, enemy)
+                .filter((s) => s !== frontSq);
+              if (otherDefs.length > 0) {
+                if (netIfRecaptured >= 0) found = true;
+                break;
               }
+              // Front is sole potential defender. Check whether front has any
+              // legal move that lands on a square attacking back — if so,
+              // opponent can move front and still defend back, and skewer only
+              // works when exchange is profitable.
+              let frontCanReDefend = false;
+              const frontMoves = clone.moves({ verbose: true, square: frontSq });
+              for (const fm of frontMoves) {
+                const c2 = new Chess(clone.fen());
+                c2.move(fm);
+                if (c2.attackers(backSq, enemy).length > 0) {
+                  frontCanReDefend = true;
+                  break;
+                }
+              }
+              if (!frontCanReDefend) found = true;
+              else if (netIfRecaptured >= 0) found = true;
               break;
             }
           }
           x += df; y -= dr;
         }
+        if (found) break;
       }
+      if (!found) continue;
+      if (moved.type !== 'k' && seeOnSquare(clone, m.to) > 0) continue;
+      out.add(m.from);
     }
   }
   return [...out];
