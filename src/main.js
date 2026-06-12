@@ -795,8 +795,7 @@ function openingAt(fen) {
   return i == null ? null : openings.entries[i];
 }
 
-function updateOpening() {
-  const op = history.at(-1)?.opening;
+function renderOpening(op) {
   const el = $('opening');
   if (!op) {
     el.innerHTML = '<span class="opening-name">Starting position</span>';
@@ -810,6 +809,24 @@ function updateOpening() {
     name.textContent = op.name;
     el.append(code, name);
   }
+}
+
+function updateOpening() {
+  renderOpening(history.at(-1)?.opening);
+}
+
+// Opening at `fen` after walking `pv` plies; carries forward when out of book.
+function openingAfterPv(fen, pv, depth) {
+  const baseIdx = history.findIndex((h) => h.fen === fen);
+  let op = baseIdx >= 0 ? history[baseIdx].opening : openingAt(fen);
+  const g = new Chess(fen);
+  for (let i = 0; i < depth && i < pv.length; i++) {
+    const u = pv[i];
+    const mv = g.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u.slice(4) || undefined });
+    if (!mv) break;
+    op = openingAt(g.fen()) || op;
+  }
+  return op;
 }
 
 // FEN reduced to the fields that define a position for opening lookup.
@@ -1100,6 +1117,40 @@ function previewLine(lineIdx, depth) {
   board.render(g);
   updateCaptured(g);
   setTurnText(`Preview — ${g.turn() === 'w' ? 'White' : 'Black'} to move`);
+  renderOpening(openingAfterPv(analyzedFen, pv, depth));
+}
+
+// Commit `depth` plies of best line `lineIdx` into the real game from the
+// analyzed position, discarding any later moves and resuming engine play.
+function commitLine(lineIdx, depth) {
+  const pv = currentLines[lineIdx]?.pv;
+  if (!pv) return;
+  if (state.thinking) return;
+  // Map analyzedFen back to a ply in history; bail if unknown.
+  let basePly;
+  if (analyzedFen === START_FEN) basePly = 0;
+  else {
+    const idx = history.findIndex((h) => h.fen === analyzedFen);
+    if (idx < 0) return;
+    basePly = idx + 1;
+  }
+  previewing = false;
+  while (history.length > basePly) { game.undo(); history.pop(); }
+  let lastMove = null;
+  for (let i = 0; i < depth && i < pv.length; i++) {
+    const u = pv[i];
+    const mv = game.move({ from: u.slice(0, 2), to: u.slice(2, 4), promotion: u.slice(4) || undefined });
+    if (!mv) break;
+    appendHistory(mv);
+    lastMove = mv;
+  }
+  $('result-banner').classList.add('hidden');
+  board.drawArrow(null);
+  refreshAll();
+  if (lastMove) playMoveSound(lastMove);
+  if (game.isGameOver()) { showResult(); scheduleReview(); return; }
+  maybeEngineTurn();
+  scheduleReview();
 }
 
 // Drop the preview and restore whatever the board was actually showing.
@@ -1107,6 +1158,7 @@ function endPreview() {
   if (!previewing) return;
   previewing = false;
   renderBoardForView();
+  updateOpening();
   // Re-draw the live best-move arrow that renderBoardForView leaves to analysis.
   if (atLiveHuman() && state.showBestMove && currentLines[0]?.pv?.[0]) {
     const u = currentLines[0].pv[0];
@@ -1198,6 +1250,11 @@ $('lines').addEventListener('mouseover', (e) => {
   if (m) previewLine(+m.dataset.line, +m.dataset.depth);
 });
 $('lines').addEventListener('mouseleave', endPreview);
+// Click a PV move to commit that variation into the game.
+$('lines').addEventListener('click', (e) => {
+  const m = e.target.closest('.pvm');
+  if (m) commitLine(+m.dataset.line, +m.dataset.depth);
+});
 
 // Move navigation: click a move to jump there; arrow keys / Home / End to step.
 $('movelist').addEventListener('click', (e) => {
