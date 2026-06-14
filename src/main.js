@@ -835,7 +835,13 @@ function highlightActiveMove() {
     const el = box.querySelector(`.mv[data-ply="${viewPly - 1}"]`);
     if (el) {
       el.classList.add('active');
-      const top = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2;
+      // Center the active move in the scroll box. Use rects rather than
+      // offsetTop, which is measured against the nearest positioned ancestor
+      // (not necessarily the scroll box) and would mis-position the scroll.
+      const elRect = el.getBoundingClientRect();
+      const boxRect = box.getBoundingClientRect();
+      const elTopInBox = elRect.top - boxRect.top + box.scrollTop;
+      const top = elTopInBox - box.clientHeight / 2 + el.clientHeight / 2;
       box.scrollTop = Math.max(0, top);
     }
   }
@@ -1035,7 +1041,8 @@ function renderMoveList() {
     if (history[i + 1]) row.appendChild(moveSpan(history[i + 1], i + 1));
     box.appendChild(row);
   }
-  box.scrollTop = box.scrollHeight;
+  // Scrolling is left to highlightActiveMove(), which every caller invokes next
+  // so the active move stays centered (instead of snapping to the bottom).
 }
 
 function moveSpan(h, i) {
