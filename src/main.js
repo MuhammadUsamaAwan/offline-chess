@@ -37,11 +37,28 @@ let viewPly = 0; // which ply the board is currently showing (history.length ===
 let currentLines = [];
 let analyzedFen = START_FEN;
 let previewing = false;
+// Explore (scratch) mode: try out a variation from any position without
+// touching `game`/`history`, so the real game is never lost. `exploreBase` is
+// the history ply the variation branches from; `exploreLine` is the scratch
+// moves; `exploreCursor` is how many of them are currently shown (0 = base).
+let exploring = false;
+let exploreBase = 0;
+const exploreLine = []; // [{ san, color, from, to, fen }]
+let exploreCursor = 0;
 // True when the board shows the live position and a human is on move — the
 // only time live analysis / best-move arrows should be computed.
 function atLiveHuman() {
-  return viewPly >= history.length && !state.thinking
+  return !exploring && viewPly >= history.length && !state.thinking
     && !game.isGameOver() && isHumanTurn();
+}
+
+// Position the scratch variation branches from, and the position it currently
+// shows after `exploreCursor` scratch plies.
+function exploreBaseFen() {
+  return exploreBase === 0 ? START_FEN : history[exploreBase - 1].fen;
+}
+function exploreFen() {
+  return exploreCursor === 0 ? exploreBaseFen() : exploreLine[exploreCursor - 1].fen;
 }
 
 // ---------- DOM ----------
@@ -170,17 +187,81 @@ function finishImport() {
 
 function handleHumanMove({ from, to, promotion }) {
   if (state.thinking) return;
-  // Playing from a reviewed (past) position deviates from the game: discard the
-  // moves that came after it and continue as a new line from here. chess.js's
-  // own history is rewound in step so PGN export stays correct.
+  // Already in a scratch variation: keep extending it.
+  if (exploring) { exploreMove({ from, to, promotion }); return; }
+  // Playing from a reviewed (past) position branches into a scratch variation
+  // instead of overwriting the game, so the original line is preserved.
   if (history.length > viewPly) {
-    while (history.length > viewPly) { game.undo(); history.pop(); }
-    $('result-banner').classList.add('hidden'); // any earlier game-over no longer applies
+    enterExplore(viewPly);
+    exploreMove({ from, to, promotion });
+    return;
   }
   const prevFen = game.fen();
   const move = game.move({ from, to, promotion: promotion || 'q' });
   if (!move) return;
   recordMove(move, prevFen);
+}
+
+// ---------- Explore (scratch variations) ----------
+// Begin a throwaway variation from `basePly` (a ply in history, or the live
+// position). Moves played now go into `exploreLine` and never touch the game.
+function enterExplore(basePly) {
+  if (analysisAbort) analysisAbort.abort(); // stop any live analysis for the game
+  exploring = true;
+  exploreBase = Math.max(0, Math.min(history.length, basePly));
+  exploreLine.length = 0;
+  exploreCursor = 0;
+  previewing = false;
+  renderMoveList();
+  renderBoardForView();
+  updateOpening();
+  updateExploreUI();
+}
+
+// Discard the scratch variation and return to the position it branched from.
+function exitExplore() {
+  if (!exploring) return;
+  exploring = false;
+  exploreLine.length = 0;
+  exploreCursor = 0;
+  viewPly = Math.min(exploreBase, history.length);
+  renderMoveList();
+  renderBoardForView();
+  updateOpening();
+  updateExploreUI();
+  if (atLiveHuman()) startLiveAnalysis();
+}
+
+// Apply one move to the scratch variation from the position currently shown,
+// truncating any forward scratch moves (so you can re-branch within a line).
+function exploreMove({ from, to, promotion }) {
+  exploreLine.length = exploreCursor;
+  const g = new Chess(exploreFen());
+  let mv;
+  try { mv = g.move({ from, to, promotion: promotion || 'q' }); } catch { mv = null; }
+  if (!mv) return;
+  exploreLine.push({ san: mv.san, color: mv.color, from: mv.from, to: mv.to, fen: g.fen() });
+  exploreCursor = exploreLine.length;
+  renderMoveList();
+  renderBoardForView();
+  updateOpening();
+  playMoveSound(mv, g);
+}
+
+// Step to a ply within the scratch variation (0 = the branch position).
+function goToExplore(cursor) {
+  const c = Math.max(0, Math.min(exploreLine.length, cursor));
+  if (c === exploreCursor) return;
+  exploreCursor = c;
+  previewing = false;
+  renderBoardForView();
+}
+
+function updateExploreUI() {
+  const btn = $('explore-toggle');
+  if (!btn) return;
+  btn.textContent = exploring ? 'Exit variation' : 'Explore';
+  btn.classList.toggle('active', exploring);
 }
 
 // Append one applied move to `history`, deriving its opening name. Shared by
@@ -395,6 +476,8 @@ function showReviewSummary(acc, counts) {
 // Called whenever the game itself changes (move / deviation / new game): snap the
 // view to the live position and redraw everything.
 function refreshAll() {
+  // Any real change to the game ends an in-progress scratch variation.
+  if (exploring) { exploring = false; exploreLine.length = 0; exploreCursor = 0; updateExploreUI(); }
   viewPly = history.length;
   renderMoveList();
   renderBoardForView();
@@ -408,6 +491,7 @@ function lastMoveOf(i) {
 
 // Render the board for the currently viewed ply (live or a past position).
 function renderBoardForView() {
+  if (exploring) return renderExploreBoard();
   const atLive = viewPly >= history.length;
   const g = atLive ? game : new Chess(viewPly === 0 ? START_FEN : history[viewPly - 1].fen);
   board.setThreats(state.showThreats ? hangingSquares(g) : []);
@@ -439,14 +523,37 @@ function renderBoardForView() {
   updateNavButtons();
 }
 
-// Reflect navigability: disable Back/First at the start, Forward/Last at live.
+// Render the board for the scratch variation (explore mode). Both sides are
+// playable so a line can be walked out by hand; the engine never replies.
+function renderExploreBoard() {
+  const g = new Chess(exploreFen());
+  board.setThreats(state.showThreats ? hangingSquares(g) : []);
+  board.setPinned(state.showPinned ? pinnedSquares(g) : []);
+  board.setCheckable(state.showCheckable ? checkableKingSquares(g) : []);
+  board.setForks(state.showForks ? forkSquares(g) : []);
+  board.setSkewers(state.showSkewers ? skewerSquares(g) : []);
+  board.setInteractive(!state.thinking);
+  const last = exploreCursor > 0
+    ? exploreLine[exploreCursor - 1]
+    : (exploreBase > 0 ? lastMoveOf(exploreBase - 1) : null);
+  board.setLastMove(last ? { from: last.from, to: last.to } : null);
+  analyzeReviewPosition(g.fen(), g.turn());
+  board.render(g);
+  updateCaptured(g);
+  setTurnText(`Variation ${exploreCursor}/${exploreLine.length} — ${g.turn() === 'w' ? 'White' : 'Black'} to move · Esc to exit`);
+  highlightActiveMove();
+  renderExplorer();
+  updateNavButtons();
+}
+
+// Reflect navigability: disable Back/First at the start, Forward/Last at the end.
 function updateNavButtons() {
-  const atStart = viewPly === 0;
-  const atLive = viewPly >= history.length;
+  const atStart = exploring ? exploreCursor === 0 : viewPly === 0;
+  const atEnd = exploring ? exploreCursor >= exploreLine.length : viewPly >= history.length;
   $('nav-first').disabled = atStart;
   $('nav-prev').disabled = atStart;
-  $('nav-next').disabled = atLive;
-  $('nav-last').disabled = atLive;
+  $('nav-next').disabled = atEnd;
+  $('nav-last').disabled = atEnd;
 }
 
 // Analyze a reviewed (past) position: refresh the "Best lines" panel and the
@@ -830,26 +937,30 @@ function goToPly(p) {
 
 function highlightActiveMove() {
   const box = $('movelist');
-  box.querySelectorAll('.mv.active').forEach((el) => el.classList.remove('active'));
-  if (viewPly > 0) {
-    const el = box.querySelector(`.mv[data-ply="${viewPly - 1}"]`);
-    if (el) {
-      el.classList.add('active');
-      // Center the active move in the scroll box. Use rects rather than
-      // offsetTop, which is measured against the nearest positioned ancestor
-      // (not necessarily the scroll box) and would mis-position the scroll.
-      const elRect = el.getBoundingClientRect();
-      const boxRect = box.getBoundingClientRect();
-      const elTopInBox = elRect.top - boxRect.top + box.scrollTop;
-      const top = elTopInBox - box.clientHeight / 2 + el.clientHeight / 2;
-      box.scrollTop = Math.max(0, top);
-    }
+  box.querySelectorAll('.active').forEach((el) => el.classList.remove('active'));
+  let el = null;
+  if (exploring) {
+    if (exploreCursor > 0) el = box.querySelector(`.emv[data-cursor="${exploreCursor}"]`);
+    else if (exploreBase > 0) el = box.querySelector(`.mv[data-ply="${exploreBase - 1}"]`);
+  } else if (viewPly > 0) {
+    el = box.querySelector(`.mv[data-ply="${viewPly - 1}"]`);
+  }
+  if (el) {
+    el.classList.add('active');
+    // Center the active move in the scroll box. Use rects rather than
+    // offsetTop, which is measured against the nearest positioned ancestor
+    // (not necessarily the scroll box) and would mis-position the scroll.
+    const elRect = el.getBoundingClientRect();
+    const boxRect = box.getBoundingClientRect();
+    const elTopInBox = elRect.top - boxRect.top + box.scrollTop;
+    const top = elTopInBox - box.clientHeight / 2 + el.clientHeight / 2;
+    box.scrollTop = Math.max(0, top);
   }
 }
 
-function playMoveSound(move) {
-  if (game.isGameOver()) return sounds.gameEnd();
-  if (game.inCheck()) return sounds.check();
+function playMoveSound(move, g = game) {
+  if (g.isGameOver()) return sounds.gameEnd();
+  if (g.inCheck()) return sounds.check();
   const f = move.flags || '';
   if (f.includes('k') || f.includes('q')) return sounds.castle();
   if (f.includes('p')) return sounds.promote();
@@ -880,6 +991,7 @@ function renderOpening(op) {
 }
 
 function updateOpening() {
+  if (exploring) { renderOpening(openingAt(exploreFen()) || null); return; }
   renderOpening(history.at(-1)?.opening);
 }
 
@@ -904,6 +1016,7 @@ function fenKey(fen) {
 
 // Full FEN of the position currently on the board (live or while reviewing).
 function viewedFen() {
+  if (exploring) return exploreFen();
   return viewPly === 0 ? START_FEN : history[viewPly - 1].fen;
 }
 
@@ -917,7 +1030,8 @@ const searchEl = $('opening-search');
 function renderExplorer() {
   if (searchEl.value.trim()) return; // search results own the list while typing
   const g = new Chess(viewedFen());
-  const num = Math.floor(viewPly / 2) + 1;
+  const ply = exploring ? exploreBase + exploreCursor : viewPly;
+  const num = Math.floor(ply / 2) + 1;
   const prefix = g.turn() === 'w' ? `${num}.` : `${num}…`;
   const seen = new Set();
   const kids = [];
@@ -961,6 +1075,13 @@ function renderSearch(query) {
 // Play a book continuation from the viewed position, discarding any later moves.
 function playExplorerMove(san) {
   if (state.thinking) return;
+  // In a scratch variation, a book move just extends the variation.
+  if (exploring) {
+    const g = new Chess(exploreFen());
+    let mv; try { mv = g.move(san); } catch { mv = null; }
+    if (mv) exploreMove({ from: mv.from, to: mv.to, promotion: mv.promotion });
+    return;
+  }
   // Discard moves after the viewed ply, keeping chess.js's own history in sync
   // (via undo) so PGN export stays correct — same as deviating with a board move.
   while (history.length > viewPly) { game.undo(); history.pop(); }
@@ -1040,9 +1161,47 @@ function renderMoveList() {
     row.appendChild(moveSpan(history[i], i));
     if (history[i + 1]) row.appendChild(moveSpan(history[i + 1], i + 1));
     box.appendChild(row);
+    // While exploring, dim the original continuation past the branch point: it
+    // stays visible for reference but isn't navigable until you exit.
+    if (exploring && i + 1 >= exploreBase) row.classList.add('shadowed');
   }
+  if (exploring) renderExploreBranch(box);
   // Scrolling is left to highlightActiveMove(), which every caller invokes next
   // so the active move stays centered (instead of snapping to the bottom).
+}
+
+// Append the scratch variation below the main line as a labelled, clickable
+// block. Each move carries its cursor index for navigation.
+function renderExploreBranch(box) {
+  const wrap = document.createElement('div');
+  wrap.className = 'explore-branch';
+  const head = document.createElement('div');
+  head.className = 'explore-head';
+  head.innerHTML = '<span>Variation</span><button class="explore-exit" type="button">Exit</button>';
+  wrap.appendChild(head);
+  const line = document.createElement('div');
+  line.className = 'explore-line';
+  exploreLine.forEach((m, j) => {
+    const ply = exploreBase + j; // 0-based ply index of this scratch move
+    if (ply % 2 === 0) {
+      const n = document.createElement('span');
+      n.className = 'num';
+      n.textContent = ply / 2 + 1 + '.';
+      line.appendChild(n);
+    } else if (j === 0) {
+      const n = document.createElement('span');
+      n.className = 'num';
+      n.textContent = Math.floor(ply / 2) + 1 + '…';
+      line.appendChild(n);
+    }
+    const s = document.createElement('span');
+    s.className = 'emv';
+    s.dataset.cursor = j + 1;
+    s.textContent = m.san;
+    line.appendChild(s);
+  });
+  wrap.appendChild(line);
+  box.appendChild(wrap);
 }
 
 function moveSpan(h, i) {
@@ -1365,6 +1524,10 @@ $('lines').addEventListener('click', (e) => {
 
 // Move navigation: click a move to jump there; arrow keys / Home / End to step.
 $('movelist').addEventListener('click', (e) => {
+  if (e.target.closest('.explore-exit')) { exitExplore(); return; }
+  const emv = e.target.closest('.emv');
+  if (emv) { goToExplore(+emv.dataset.cursor); return; }
+  if (exploring) return; // main-line moves aren't navigable while exploring
   const mv = e.target.closest('.mv');
   if (mv) goToPly(+mv.dataset.ply + 1);
 });
@@ -1390,6 +1553,14 @@ document.addEventListener('keydown', (e) => {
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   if (e.key === 'Escape') {
     if (closeAllSheets()) { e.preventDefault(); return; }
+    if (exploring) { e.preventDefault(); exitExplore(); return; }
+  }
+  if (exploring) {
+    if (e.key === 'ArrowLeft') { e.preventDefault(); goToExplore(exploreCursor - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); goToExplore(exploreCursor + 1); }
+    else if (e.key === 'Home') { e.preventDefault(); goToExplore(0); }
+    else if (e.key === 'End') { e.preventDefault(); goToExplore(exploreLine.length); }
+    return;
   }
   if (e.key === 'ArrowLeft') { e.preventDefault(); goToPly(viewPly - 1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); goToPly(viewPly + 1); }
@@ -1432,10 +1603,11 @@ document.querySelectorAll('.tabbtn').forEach((b) => {
 });
 setInfoTab('moves');
 
-$('nav-first').addEventListener('click', () => goToPly(0));
-$('nav-prev').addEventListener('click', () => goToPly(viewPly - 1));
-$('nav-next').addEventListener('click', () => goToPly(viewPly + 1));
-$('nav-last').addEventListener('click', () => goToPly(history.length));
+$('nav-first').addEventListener('click', () => (exploring ? goToExplore(0) : goToPly(0)));
+$('nav-prev').addEventListener('click', () => (exploring ? goToExplore(exploreCursor - 1) : goToPly(viewPly - 1)));
+$('nav-next').addEventListener('click', () => (exploring ? goToExplore(exploreCursor + 1) : goToPly(viewPly + 1)));
+$('nav-last').addEventListener('click', () => (exploring ? goToExplore(exploreLine.length) : goToPly(history.length)));
+$('explore-toggle').addEventListener('click', () => (exploring ? exitExplore() : enterExplore(viewPly)));
 
 $('accuracy-toggle').addEventListener('change', (e) => {
   state.showAccuracy = e.target.checked;
